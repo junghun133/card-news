@@ -58,6 +58,16 @@ export default function CardEditor() {
         onChange={(v) => setCardData({ backgroundImageUrl: v })}
         placeholder="https://images.unsplash.com/..."
       />
+
+      <div className="border-t border-cream-dark pt-4">
+        <Input
+          label="인스타그램 본문글"
+          value={cardData.caption || ''}
+          onChange={(v) => setCardData({ caption: v })}
+          placeholder="인스타그램에 올릴 본문 텍스트가 자동으로 생성됩니다..."
+          multiline
+        />
+      </div>
     </div>
   )
 }

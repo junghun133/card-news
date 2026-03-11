@@ -34,21 +34,22 @@ export default function EditorPage() {
   }
 
   const handleCopyCaption = async () => {
-    let caption = cardData.caption
-    if (!caption && window.api) {
-      try {
-        const result = await window.api.generateCaption(cardData)
-        if (result.success) caption = result.caption
-      } catch {
-        // fallback
-      }
-    }
-    if (!caption) {
-      caption = `${cardData.title}\n\n${cardData.description}\n\n${cardData.hashtags?.join(' ') || ''}`
-    }
+    const caption = cardData.caption || `${cardData.title}\n\n${cardData.description}\n\n${cardData.hashtags?.join(' ') || ''}`
     navigator.clipboard.writeText(caption)
     setCaptionCopied(true)
     setTimeout(() => setCaptionCopied(false), 2000)
+  }
+
+  const handleRegenerateCaption = async () => {
+    if (!window.api) return
+    try {
+      const result = await window.api.generateCaption(cardData)
+      if (result.success) {
+        useCardStore.getState().setCardData({ caption: result.caption })
+      }
+    } catch {
+      // ignore
+    }
   }
 
   const showImagePicker = selectedLayout !== 'text-emphasis'
@@ -66,6 +67,9 @@ export default function EditorPage() {
           </Button>
           <Button variant="secondary" onClick={handleCopyCaption}>
             {captionCopied ? '복사 완료!' : '캡션 복사'}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleRegenerateCaption}>
+            캡션 재생성
           </Button>
         </div>
       </div>

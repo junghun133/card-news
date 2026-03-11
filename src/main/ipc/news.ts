@@ -81,12 +81,21 @@ ${catLabel} 분야에서 현재 가장 핫한 뉴스 주제 5개를 추천해줘
     try {
       const cardData = await generateCardData(topic.title, topic.relatedArticles || [])
 
+      // 이미지 검색과 캡션 생성을 병렬로 처리
       let images: any[] = []
-      try {
-        images = await searchImagesByCategory(topic.category, cardData.imageKeywords)
-      } catch {
-        // Unsplash 실패 시 무시
-      }
+      let caption = ''
+
+      const [imageResult, captionResult] = await Promise.allSettled([
+        searchImagesByCategory(topic.category, cardData.imageKeywords),
+        generateCaption({
+          keyword: cardData.keyword,
+          title: cardData.title,
+          description: cardData.description
+        })
+      ])
+
+      if (imageResult.status === 'fulfilled') images = imageResult.value
+      if (captionResult.status === 'fulfilled') caption = captionResult.value
 
       return {
         success: true,
@@ -96,7 +105,8 @@ ${catLabel} 분야에서 현재 가장 핫한 뉴스 주제 5개를 추천해줘
           description: cardData.description,
           source: cardData.sourceAttribution,
           hashtags: cardData.hashtags,
-          backgroundImageUrl: images[0]?.url || null
+          backgroundImageUrl: images[0]?.url || null,
+          caption
         },
         images
       }
