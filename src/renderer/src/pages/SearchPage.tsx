@@ -21,25 +21,81 @@ const CATEGORY_COLORS: Record<Category, string> = {
 
 export default function SearchPage() {
   const navigate = useNavigate()
-  const { selectedCategory, setCategory, topics, setTopics, isSearching, setSearching, selectTopic } = useCardStore()
+  const {
+    selectedCategory,
+    setCategory,
+    topics,
+    setTopics,
+    isSearching,
+    setSearching,
+    selectTopic,
+    setCardData
+  } = useCardStore()
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [validating, setValidating] = useState<string | null>(null)
 
-  const handleLoadNews = () => {
+  const handleLoadNews = async () => {
     setSearching(true)
-    // 더미 데이터 시뮬레이션 (나중에 API 연동)
-    setTimeout(() => {
+    setError(null)
+
+    try {
+      if (window.api) {
+        // 실제 API 호출
+        const cat = selectedCategory === 'all' ? 'all' : selectedCategory
+        const result = await window.api.searchNews(cat)
+        if (result.success && result.topics?.length > 0) {
+          setTopics(result.topics)
+          setLoaded(true)
+        } else {
+          // API 실패 시 더미 데이터 fallback
+          console.warn('API fallback to dummy data:', result.error)
+          setTopics(DUMMY_TOPICS)
+          setLoaded(true)
+        }
+      } else {
+        // Electron 외부 (브라우저 dev) - 더미 데이터
+        setTimeout(() => {
+          setTopics(DUMMY_TOPICS)
+          setLoaded(true)
+        }, 1000)
+      }
+    } catch (err: any) {
+      console.error('Search error:', err)
+      setError(err.message || '뉴스를 불러오는데 실패했습니다.')
+      // fallback
       setTopics(DUMMY_TOPICS)
-      setSearching(false)
       setLoaded(true)
-    }, 1500)
+    } finally {
+      setSearching(false)
+    }
   }
 
   const filteredTopics =
     selectedCategory === 'all' ? topics : topics.filter((t) => t.category === selectedCategory)
 
-  const handleSelectTopic = (topic: typeof topics[0]) => {
+  const handleSelectTopic = async (topic: (typeof topics)[0]) => {
+    setValidating(topic.id)
+
+    try {
+      if (window.api) {
+        // 교차검증 + 카드 데이터 생성
+        const result = await window.api.validateNews(topic)
+        if (result.success && result.cardData) {
+          selectTopic(topic)
+          setCardData(result.cardData)
+          navigate('/editor')
+          return
+        }
+      }
+    } catch (err) {
+      console.warn('Validate fallback:', err)
+    }
+
+    // fallback: 더미 데이터로 진행
     selectTopic(topic)
     navigate('/editor')
+    setValidating(null)
   }
 
   return (
@@ -77,13 +133,24 @@ export default function SearchPage() {
           </div>
         )}
 
-        {isSearching && <LoadingSpinner text="최신 뉴스를 분석하고 있습니다..." />}
+        {isSearching && <LoadingSpinner text="AI가 최신 뉴스를 분석하고 있습니다..." />}
+
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+            {error} (더미 데이터로 표시합니다)
+          </div>
+        )}
 
         {loaded && !isSearching && (
           <div className="flex flex-col gap-4">
-            <h3 className="text-lg font-semibold text-text-dark">
-              추천 주제 ({filteredTopics.length}건)
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-text-dark">
+                추천 주제 ({filteredTopics.length}건)
+              </h3>
+              <Button variant="ghost" size="sm" onClick={handleLoadNews}>
+                새로고침
+              </Button>
+            </div>
             {filteredTopics.map((topic) => (
               <div
                 key={topic.id}
@@ -94,25 +161,28 @@ export default function SearchPage() {
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs font-semibold ${CATEGORY_COLORS[topic.category]}`}
                     >
-                      {topic.category === 'ai' ? 'AI' : topic.category === 'stocks' ? '주식' : '전쟁'}
+                      {topic.category === 'ai'
+                        ? 'AI'
+                        : topic.category === 'stocks'
+                          ? '주식'
+                          : '전쟁'}
                     </span>
-                    <span className="text-xs text-text-light">
-                      {topic.sourceCount}개 출처
-                    </span>
+                    <span className="text-xs text-text-light">{topic.sourceCount}개 출처</span>
                   </div>
                   <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-bold text-amber-700">
                     관심도 {topic.interestScore}
                   </span>
                 </div>
                 <h4 className="text-lg font-bold text-text-dark">{topic.title}</h4>
-                <p className="text-sm text-text-gray leading-relaxed">{topic.summary}</p>
+                <p className="text-sm leading-relaxed text-text-gray">{topic.summary}</p>
                 <Button
                   variant="primary"
                   size="sm"
                   onClick={() => handleSelectTopic(topic)}
+                  disabled={validating === topic.id}
                   className="self-end"
                 >
-                  이 주제로 카드뉴스 만들기
+                  {validating === topic.id ? 'AI가 분석 중...' : '이 주제로 카드뉴스 만들기'}
                 </Button>
               </div>
             ))}

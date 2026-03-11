@@ -33,10 +33,19 @@ export default function EditorPage() {
     }
   }
 
-  const handleCopyCaption = () => {
-    const caption =
-      cardData.caption ||
-      `${cardData.title}\n\n${cardData.description}\n\n${cardData.hashtags?.join(' ') || ''}`
+  const handleCopyCaption = async () => {
+    let caption = cardData.caption
+    if (!caption && window.api) {
+      try {
+        const result = await window.api.generateCaption(cardData)
+        if (result.success) caption = result.caption
+      } catch {
+        // fallback
+      }
+    }
+    if (!caption) {
+      caption = `${cardData.title}\n\n${cardData.description}\n\n${cardData.hashtags?.join(' ') || ''}`
+    }
     navigator.clipboard.writeText(caption)
     setCaptionCopied(true)
     setTimeout(() => setCaptionCopied(false), 2000)

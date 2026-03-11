@@ -2,8 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
   // 뉴스 검색
-  searchNews: (topic: string) => ipcRenderer.invoke('news:search', topic),
-  validateNews: (topicId: string) => ipcRenderer.invoke('news:validate', topicId),
+  searchNews: (category: string) => ipcRenderer.invoke('news:search', category),
+  validateNews: (topic: any) => ipcRenderer.invoke('news:validate', topic),
+  generateCaption: (cardData: any) => ipcRenderer.invoke('news:caption', cardData),
 
   // 이미지 검색
   searchImages: (query: string) => ipcRenderer.invoke('images:search', query),
