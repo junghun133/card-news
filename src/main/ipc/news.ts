@@ -1,71 +1,44 @@
 import { ipcMain } from 'electron'
-import { generateCardData, generateCaption } from '../services/openai'
+import { suggestTopics, generateCardData, generateCaption } from '../services/openai'
 import { searchImages, searchImagesByCategory } from '../services/unsplash'
-import OpenAI from 'openai'
-import dotenv from 'dotenv'
-import { join } from 'path'
-
-dotenv.config({ path: join(process.cwd(), '.env') })
+import { searchNews as serperSearch } from '../services/serper'
 
 export function registerNewsHandlers(): void {
   /**
-   * 최신 뉴스 불러오기 → 주제 추천
-   * OpenAI에게 최신 트렌드 기반 주제를 요청
+   * 최신 뉴스 불러오기 → Serper로 실제 뉴스 수집 → OpenAI 주제 추천
    */
   ipcMain.handle('news:search', async (_event, category: string) => {
     try {
-      const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+      // 1. Serper로 실제 뉴스 기사 수집
+      const articles = await serperSearch(category)
+      if (articles.length === 0) {
+        return { success: false, error: '뉴스를 찾을 수 없습니다.' }
+      }
 
-      const catLabel =
-        category === 'ai'
-          ? 'AI/인공지능'
-          : category === 'stocks'
-            ? '주식/금융'
-            : category === 'war'
-              ? '전쟁/국제정세'
-              : 'AI, 주식, 전쟁/국제정세'
+      // 2. OpenAI로 수집된 기사 분석 → 주제 추천
+      const topicResults = await suggestTopics(articles, category === 'all' ? 'ai' : category)
 
-      const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content: `너는 최신 뉴스 트렌드에 정통한 한국어 뉴스 큐레이터야.
-${catLabel} 분야에서 현재 가장 핫한 뉴스 주제 5개를 추천해줘.
-각 주제에 대해 구체적인 수치와 출처를 포함해서 작성해.
+      // 3. 각 주제에 관련 기사 매핑
+      const topics = topicResults.map((t: any) => {
+        // relatedArticleIndices가 있으면 해당 기사 매핑, 없으면 상위 3개
+        const indices: number[] = t.relatedArticleIndices || []
+        const related =
+          indices.length > 0
+            ? indices
+                .filter((idx: number) => idx >= 1 && idx <= articles.length)
+                .map((idx: number) => articles[idx - 1])
+            : articles.slice(0, 3)
 
-반드시 아래 JSON 형식으로 응답해:
-{
-  "topics": [
-    {
-      "category": "ai" | "stocks" | "war",
-      "title": "주제 제목 (20자 이내)",
-      "summary": "한줄 요약 (구체적 수치 포함, 60자 이내)",
-      "interestScore": 80-98,
-      "sourceCount": 2-5,
-      "relatedArticles": [
-        { "title": "기사 제목", "snippet": "기사 요약", "source": "매체명", "url": "#", "date": "2026-03-11" }
-      ]
-    }
-  ]
-}`
-          },
-          {
-            role: 'user',
-            content: `${catLabel} 분야의 최신 핫 뉴스 주제 5개를 추천해줘. 가능하면 최근 기준으로 가장 화제가 되는 내용으로.`
-          }
-        ]
+        return {
+          id: `${t.category || category}-${t.id}-${Date.now()}`,
+          category: t.category || category,
+          title: t.title,
+          summary: t.summary,
+          interestScore: t.interestScore,
+          sourceCount: t.sourceCount || related.length,
+          relatedArticles: related
+        }
       })
-
-      const content = response.choices[0]?.message?.content
-      if (!content) return { success: false, error: 'OpenAI 응답이 비어있습니다.' }
-
-      const parsed = JSON.parse(content)
-      const topics = (parsed.topics || []).map((t: any, i: number) => ({
-        ...t,
-        id: `${t.category || category}-${i}-${Date.now()}`
-      }))
 
       return { success: true, topics }
     } catch (err: any) {
