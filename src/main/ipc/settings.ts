@@ -47,4 +47,52 @@ export function registerSettingsHandlers(): void {
     }
     return { success: true }
   })
+
+  ipcMain.handle('settings:validate', async () => {
+    const result = { serper: false, openai: false, unsplash: false }
+
+    // Serper 검증
+    const serperKey = process.env.SERPER_API_KEY
+    if (serperKey) {
+      try {
+        const res = await fetch('https://google.serper.dev/news', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: 'test', num: 1 })
+        })
+        result.serper = res.ok
+      } catch {
+        result.serper = false
+      }
+    }
+
+    // OpenAI 검증
+    const openaiKey = process.env.OPENAI_API_KEY
+    if (openaiKey) {
+      try {
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: { Authorization: `Bearer ${openaiKey}` }
+        })
+        result.openai = res.ok
+      } catch {
+        result.openai = false
+      }
+    }
+
+    // Unsplash 검증
+    const unsplashKey = process.env.UNSPLASH_ACCESS_KEY
+    if (unsplashKey) {
+      try {
+        const res = await fetch(
+          `https://api.unsplash.com/search/photos?query=test&per_page=1`,
+          { headers: { Authorization: `Client-ID ${unsplashKey}` } }
+        )
+        result.unsplash = res.ok
+      } catch {
+        result.unsplash = false
+      }
+    }
+
+    return result
+  })
 }

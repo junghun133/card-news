@@ -74,10 +74,12 @@ export async function suggestTopics(
       "summary": "한줄 요약 (50자 이내)",
       "interestScore": 0-100,
       "sourceCount": 관련 기사 수,
-      "relatedArticleIndices": [1, 2, 3]
+      "relatedArticleIndices": [1, 2, 3],
+      "category": "ai|stocks|war"
     }
   ]
-}`
+}
+category는 반드시 ai, stocks, war 중 하나로 분류해줘.`
       },
       {
         role: 'user',
@@ -92,7 +94,7 @@ export async function suggestTopics(
   const parsed = JSON.parse(content)
   return (parsed.topics || []).map((t: any, i: number) => ({
     id: `${category}-${i}`,
-    category: category as 'ai' | 'stocks' | 'war',
+    category: (t.category || category) as 'ai' | 'stocks' | 'war',
     title: t.title,
     summary: t.summary,
     interestScore: t.interestScore || 80,

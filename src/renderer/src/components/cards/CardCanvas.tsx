@@ -1,13 +1,16 @@
 import { useRef, forwardRef, useImperativeHandle } from 'react'
-import { toPng } from 'html-to-image'
+import { toPng, toJpeg } from 'html-to-image'
 import { CARD_SIZE } from '@/lib/designTokens'
 import { useCardStore } from '@/stores/useCardStore'
 import TextEmphasisCard from './TextEmphasisCard'
 import ImageBackgroundCard from './ImageBackgroundCard'
 import SplitCard from './SplitCard'
+import GradientCard from './GradientCard'
+import MinimalCard from './MinimalCard'
 
 export interface CardCanvasHandle {
   exportPng: () => Promise<string>
+  exportJpeg: () => Promise<string>
 }
 
 interface Props {
@@ -21,13 +24,22 @@ const CardCanvas = forwardRef<CardCanvasHandle, Props>(({ scale = 0.45 }, ref) =
   useImperativeHandle(ref, () => ({
     exportPng: async () => {
       if (!cardRef.current) throw new Error('Card ref not available')
-      const dataUrl = await toPng(cardRef.current, {
+      return toPng(cardRef.current, {
         width: CARD_SIZE,
         height: CARD_SIZE,
         pixelRatio: 2,
         cacheBust: true
       })
-      return dataUrl
+    },
+    exportJpeg: async () => {
+      if (!cardRef.current) throw new Error('Card ref not available')
+      return toJpeg(cardRef.current, {
+        width: CARD_SIZE,
+        height: CARD_SIZE,
+        pixelRatio: 2,
+        quality: 0.92,
+        cacheBust: true
+      })
     }
   }))
 
@@ -39,6 +51,10 @@ const CardCanvas = forwardRef<CardCanvasHandle, Props>(({ scale = 0.45 }, ref) =
         return <ImageBackgroundCard {...cardData} />
       case 'split-layout':
         return <SplitCard {...cardData} />
+      case 'gradient-card':
+        return <GradientCard {...cardData} />
+      case 'minimal-card':
+        return <MinimalCard {...cardData} />
     }
   }
 

@@ -1,5 +1,5 @@
 export type Category = 'ai' | 'stocks' | 'war'
-export type LayoutType = 'text-emphasis' | 'image-background' | 'split-layout'
+export type LayoutType = 'text-emphasis' | 'image-background' | 'split-layout' | 'gradient-card' | 'minimal-card'
 
 export interface Article {
   title: string

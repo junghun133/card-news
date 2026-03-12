@@ -14,7 +14,8 @@ const api = {
 
   // 설정
   getSettings: () => ipcRenderer.invoke('settings:get'),
-  setSettings: (settings: Record<string, string>) => ipcRenderer.invoke('settings:set', settings)
+  setSettings: (settings: Record<string, string>) => ipcRenderer.invoke('settings:set', settings),
+  validateSettings: () => ipcRenderer.invoke('settings:validate')
 }
 
 contextBridge.exposeInMainWorld('api', api)

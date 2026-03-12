@@ -11,20 +11,32 @@ export const CARD_TEMPLATES: Record<LayoutType, CardTemplate> = {
   'text-emphasis': {
     id: 'text-emphasis',
     name: '텍스트 강조형',
-    description: '이미지 없이 깔끔한 텍스트 중심',
+    description: '깔끔한 텍스트 중심',
     needsImage: false
   },
   'image-background': {
     id: 'image-background',
     name: '이미지 배경형',
-    description: '무드 있는 이미지 + 텍스트 오버레이',
+    description: '이미지 + 오버레이',
     needsImage: true
   },
   'split-layout': {
     id: 'split-layout',
     name: '좌우 분할형',
-    description: '텍스트 + 이미지 균형 있게 배치',
+    description: '텍스트 + 이미지',
     needsImage: true
+  },
+  'gradient-card': {
+    id: 'gradient-card',
+    name: '그라데이션형',
+    description: '컬러풀 그라데이션',
+    needsImage: false
+  },
+  'minimal-card': {
+    id: 'minimal-card',
+    name: '미니멀형',
+    description: '깔끔 세련 디자인',
+    needsImage: false
   }
 }
 
@@ -68,5 +80,20 @@ export const LAYOUT_STYLES = {
     splitRatio: { text: 55, image: 45 },
     imageBorderRadius: 12,
     contentPadding: 50
+  },
+  'gradient-card': {
+    gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    keywordColor: '#FFFFFF',
+    keywordSize: 80,
+    descriptionColor: 'rgba(255,255,255,0.85)',
+    descriptionSize: 28
+  },
+  'minimal-card': {
+    outerBg: '#FAFAFA',
+    accentColor: '#1A1A2E',
+    keywordColor: '#1A1A2E',
+    keywordSize: 64,
+    descriptionColor: '#666666',
+    descriptionSize: 24
   }
 } as const

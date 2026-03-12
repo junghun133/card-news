@@ -16,7 +16,7 @@ export function registerNewsHandlers(): void {
       }
 
       // 2. OpenAI로 수집된 기사 분석 → 주제 추천
-      const topicResults = await suggestTopics(articles, category === 'all' ? 'ai' : category)
+      const topicResults = await suggestTopics(articles, category)
 
       // 3. 각 주제에 관련 기사 매핑
       const topics = topicResults.map((t: any) => {
