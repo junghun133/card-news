@@ -40,6 +40,9 @@ export function registerNewsHandlers(): void {
         }
       })
 
+      // 인기도(interestScore) 내림차순 정렬
+      topics.sort((a: any, b: any) => (b.interestScore || 0) - (a.interestScore || 0))
+
       return { success: true, topics }
     } catch (err: any) {
       console.error('News search error:', err)
