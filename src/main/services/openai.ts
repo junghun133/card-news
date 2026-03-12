@@ -47,10 +47,12 @@ export async function suggestTopics(
 ): Promise<TopicResult[]> {
   const client = getClient()
 
-  const articlesText = articles
+  // 토큰 절약: 상위 10개만, snippet 100자 제한, URL 제외
+  const trimmed = articles.slice(0, 10)
+  const articlesText = trimmed
     .map(
       (a, i) =>
-        `[${i + 1}] ${a.source} (${a.date})\n제목: ${a.title}\n내용: ${a.snippet}\nURL: ${a.url}`
+        `[${i + 1}] ${a.source} (${a.date})\n제목: ${a.title}\n내용: ${a.snippet.slice(0, 100)}`
     )
     .join('\n---\n')
 
@@ -113,10 +115,11 @@ export async function generateCardData(
 ): Promise<CardResult> {
   const client = getClient()
 
+  // 토큰 절약: snippet 150자 제한
   const articlesText = articles
     .map(
       (a, i) =>
-        `[${i + 1}] ${a.source} (${a.date})\n제목: ${a.title}\n내용: ${a.snippet}`
+        `[${i + 1}] ${a.source} (${a.date})\n제목: ${a.title}\n내용: ${a.snippet.slice(0, 150)}`
     )
     .join('\n---\n')
 

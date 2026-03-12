@@ -48,7 +48,7 @@ export async function searchNews(
           q,
           gl: 'kr',
           hl: 'ko',
-          num: 10
+          num: 5
         })
       })
 
