@@ -1,9 +1,3 @@
-import dotenv from 'dotenv'
-import { join } from 'path'
-import { net } from 'electron'
-
-dotenv.config({ path: join(process.cwd(), '.env') })
-
 interface UnsplashPhoto {
   id: string
   urls: {

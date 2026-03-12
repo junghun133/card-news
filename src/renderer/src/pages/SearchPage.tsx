@@ -84,6 +84,7 @@ export default function SearchPage() {
         if (result.success && result.cardData) {
           selectTopic(topic)
           setCardData(result.cardData)
+          setValidating(null)
           navigate('/editor')
           return
         }
@@ -94,8 +95,8 @@ export default function SearchPage() {
 
     // fallback: 더미 데이터로 진행
     selectTopic(topic)
-    navigate('/editor')
     setValidating(null)
+    navigate('/editor')
   }
 
   return (

@@ -1,10 +1,4 @@
 import OpenAI from 'openai'
-import dotenv from 'dotenv'
-import { join } from 'path'
-import { app } from 'electron'
-
-// .env 로드 (개발 시 프로젝트 루트, 프로덕션 시 app 경로)
-dotenv.config({ path: join(process.cwd(), '.env') })
 
 function getClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY
@@ -102,7 +96,8 @@ export async function suggestTopics(
     title: t.title,
     summary: t.summary,
     interestScore: t.interestScore || 80,
-    sourceCount: t.sourceCount || 2
+    sourceCount: t.sourceCount || 2,
+    relatedArticleIndices: t.relatedArticleIndices || []
   }))
 }
 

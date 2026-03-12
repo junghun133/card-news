@@ -41,7 +41,7 @@ export const useCardStore = create<CardStore>((set) => ({
         keyword: topic.title.split(',')[0].slice(0, 12),
         title: topic.title,
         description: topic.summary,
-        source: `출처: ${topic.relatedArticles.map((a) => a.source).join(', ')} 종합`,
+        source: `출처: ${(topic.relatedArticles || []).map((a) => a.source).join(', ') || '뉴스'} 종합`,
         hashtags: [`#${topic.category === 'ai' ? 'AI' : topic.category === 'stocks' ? '주식' : '전쟁'}`, '#카드뉴스', '#뉴스'],
         backgroundImageUrl: DUMMY_CARD_DATA.backgroundImageUrl
       }
