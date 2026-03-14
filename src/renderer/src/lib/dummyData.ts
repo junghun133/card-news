@@ -36,7 +36,7 @@ export const DUMMY_TOPICS: TopicSuggestion[] = [
     relatedArticles: [
       { title: '우크라 휴전 협상 물밑 접촉 활발', snippet: '미국과 유럽이 공동 중재안을 마련 중인 것으로 알려져', source: 'AP', url: '#', date: '2026-03-10' },
       { title: '러시아, 조건부 협상 의사 표명', snippet: '크림반도 문제를 별도 협의하는 조건으로 대화 의사 밝혀', source: 'Reuters', url: '#', date: '2026-03-09' },
-      { title: '젤렌스키 "평화는 원하지만 영토는 포기 못해"', snippet: '우크라이나 대통령이 국민 연설에서 원칙적 입장 재확인', source: 'BBC', url: '#', date: '2026-03-09' }
+      { title: '젤렌스키 대통령 원칙적 입장 재확인', snippet: '우크라이나 대통령이 국민 연설에서 원칙적 입장 재확인', source: 'BBC', url: '#', date: '2026-03-09' }
     ]
   },
   {
@@ -66,17 +66,90 @@ export const DUMMY_TOPICS: TopicSuggestion[] = [
 ]
 
 export const DUMMY_CARD_DATA: CardData = {
-  keyword: 'GPT-5 출시',
+  keyword: 'GPT-5 출시 임박, AI 업계 지각변동 예고',
   title: 'AI 업계 최대 지각변동',
-  description:
-    'OpenAI의 차세대 모델 GPT-5가 올해 상반기 출시 예정. 멀티모달 성능 대폭 향상으로 AI 산업 전반에 변화가 예상됩니다.',
-  source: '출처: Reuters, Bloomberg, Gartner 종합',
-  hashtags: ['#AI', '#GPT5', '#인공지능', '#OpenAI', '#테크뉴스'],
+  description: '',
+  source: '',
+  hashtags: [],
   backgroundImageUrl:
     'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1080&h=1080&fit=crop',
   caption:
-    'OpenAI가 차세대 AI 모델 GPT-5를 올해 상반기 출시할 예정입니다. 기존 대비 추론 능력 3배 향상, 멀티모달 성능 대폭 개선이 예상됩니다.\n\n#AI #GPT5 #인공지능 #OpenAI #테크뉴스 #카드뉴스 #뉴스'
+    'OpenAI가 차세대 AI 모델 GPT-5를 올해 상반기 출시할 예정입니다. 기존 대비 추론 능력 3배 향상, 멀티모달 성능 대폭 개선이 예상됩니다.\n\n#AI #GPT5 #인공지능 #OpenAI #테크뉴스 #카드뉴스 #뉴스',
+  coverTitleSegments: [
+    { text: 'GPT-5', color: '#FF0000' },
+    { text: '출시 임박,' },
+    { text: 'AI 업계', color: '#FFD700' },
+    { text: '지각변동 예고' }
+  ]
 }
+
+export const DUMMY_SLIDES: CardData[] = [
+  {
+    keyword: 'GPT-5 출시 임박, AI 업계 지각변동 예고',
+    title: 'AI 업계 최대 지각변동',
+    description: '',
+    source: '',
+    hashtags: [],
+    backgroundImageUrl:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1080&h=1080&fit=crop',
+    coverTitleSegments: [
+      { text: 'GPT-5', color: '#FF0000' },
+      { text: '출시 임박,' },
+      { text: 'AI 업계', color: '#FFD700' },
+      { text: '지각변동 예고' }
+    ]
+  },
+  {
+    keyword: '추론 능력 3배',
+    title: 'GPT-5 핵심 성능',
+    description:
+      'OpenAI의 차세대 모델 GPT-5는 기존 GPT-4 대비 추론 능력이 3배 향상될 것으로 전망됩니다. 특히 복잡한 수학 문제 풀이, 코드 생성, 논리적 추론 영역에서 비약적인 발전이 예상되며, 전문가들은 이번 모델이 AGI(범용 인공지능)에 한 발짝 더 다가간 것이라고 평가하고 있습니다. Bloomberg에 따르면 이미 일부 기업 고객을 대상으로 베타 테스트가 진행 중입니다.',
+    source: '',
+    hashtags: [],
+    backgroundImageUrl:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1080&h=1080&fit=crop'
+  },
+  {
+    keyword: '5000억 달러',
+    title: 'AI 시장 규모 폭발',
+    description:
+      'Gartner 보고서에 따르면 2026년 글로벌 AI 시장 규모가 5000억 달러를 돌파할 전망입니다. 이는 전년 대비 37% 성장한 수치로, AI 반도체, 클라우드 인프라, 엔터프라이즈 소프트웨어 등 전 분야에서 고른 성장이 예상됩니다. 특히 생성형 AI 시장은 연평균 86% 성장률을 기록하며 전체 시장의 25%를 차지할 것으로 보입니다.',
+    source: '',
+    hashtags: [],
+    backgroundImageUrl:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1080&h=1080&fit=crop'
+  },
+  {
+    keyword: '빅테크 경쟁',
+    title: '구글·메타도 가세',
+    description:
+      '구글 Gemini 2.0, 메타 Llama 4 등 빅테크 기업들의 AI 모델 경쟁이 심화되고 있습니다. 구글은 올해 1분기 내 Gemini 2.0을 공개할 예정이며, 메타는 오픈소스 전략을 강화하여 Llama 4를 무료로 배포할 계획입니다. 이러한 경쟁은 AI 기술의 민주화를 가속화하는 동시에 각 기업의 클라우드 매출 성장에도 직접적인 영향을 미치고 있습니다.',
+    source: '',
+    hashtags: [],
+    backgroundImageUrl:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1080&h=1080&fit=crop'
+  },
+  {
+    keyword: '멀티모달 혁신',
+    title: '텍스트·이미지·코드 통합',
+    description:
+      'GPT-5는 멀티모달 성능이 대폭 향상되어 텍스트, 이미지, 코드를 동시에 처리할 수 있게 됩니다. 영상 분석, 실시간 음성 대화, 3D 모델 이해 등 기존에는 별도 모델이 필요했던 작업들을 단일 모델로 처리할 수 있으며, 이를 통해 엔터프라이즈 시장에서의 입지를 더욱 강화할 것으로 예상됩니다.',
+    source: '',
+    hashtags: [],
+    backgroundImageUrl:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1080&h=1080&fit=crop'
+  },
+  {
+    keyword: '핵심 정리',
+    title: 'AI 산업 전반에 변화 예고',
+    description:
+      'GPT-5 출시로 AI 산업 전반에 큰 변화가 예상되며, 빅테크 간 경쟁이 더욱 가속화될 전망입니다. 5000억 달러 시장에서 기술 우위를 점하기 위한 대규모 투자가 이어지고 있으며, 이는 곧 일반 사용자들에게도 더 강력하고 저렴한 AI 서비스로 돌아올 것으로 기대됩니다.',
+    source: '출처: Reuters, Bloomberg, Gartner 종합',
+    hashtags: ['#AI', '#GPT5', '#인공지능', '#OpenAI', '#테크뉴스'],
+    backgroundImageUrl:
+      'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1080&h=1080&fit=crop'
+  }
+]
 
 export const DUMMY_IMAGES = [
   'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=400&h=400&fit=crop',

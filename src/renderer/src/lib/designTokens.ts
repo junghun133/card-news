@@ -14,5 +14,5 @@ export const COLORS = {
 }
 
 export const FONTS = {
-  heading: "'Noto Sans KR', 'Pretendard', sans-serif"
+  heading: "'A2G', 'Noto Sans KR', 'Pretendard', sans-serif"
 }

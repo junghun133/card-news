@@ -16,11 +16,11 @@ export default function Input({
   type = 'text'
 }: Props) {
   const cls =
-    'w-full rounded-lg border border-cream-dark bg-white px-4 py-2.5 text-text-dark outline-none focus:border-blue-accent focus:ring-1 focus:ring-blue-accent transition-colors'
+    'w-full rounded-lg border border-cream-dark bg-white px-4 py-2.5 text-text-dark outline-none focus:border-blue-accent focus:ring-1 focus:ring-blue-accent transition-colors dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400'
 
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-text-gray">{label}</span>
+      <span className="text-sm font-medium text-text-gray dark:text-gray-400">{label}</span>
       {multiline ? (
         <textarea
           value={value}

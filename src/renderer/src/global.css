@@ -1,5 +1,72 @@
 @import "tailwindcss";
 
+/* 에이투지체 (A2G) 웹폰트 */
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-1Thin.woff2') format('woff2');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-2ExtraLight.woff2') format('woff2');
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-3Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-4Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-5Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-6SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-7Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-8ExtraBold.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'A2G';
+  src: url('./assets/fonts/에이투지체-9Black.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-cream: #F5F0E8;
   --color-cream-dark: #E8E0D0;
@@ -11,7 +78,7 @@
   --color-text-dark: #1A1A2E;
   --color-text-gray: #4A4A4A;
   --color-text-light: #888888;
-  --font-sans: 'Noto Sans KR', 'Pretendard', sans-serif;
+  --font-sans: 'A2G', 'Noto Sans KR', 'Pretendard', sans-serif;
 }
 
 body {
@@ -23,8 +90,14 @@ body {
 }
 
 .dark body {
-  background-color: #111827;
+  background-color: #0d1117;
   color: #e5e7eb;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  color-scheme: dark;
 }
 
 * {

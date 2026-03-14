@@ -18,8 +18,8 @@ export default function Button({
   const base = 'rounded-lg font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
   const variants = {
     primary: 'bg-blue-accent text-white hover:opacity-90',
-    secondary: 'bg-cream-dark text-text-dark hover:bg-cream-dark/80',
-    ghost: 'bg-transparent text-text-gray hover:bg-cream-dark/50'
+    secondary: 'bg-cream-dark text-text-dark hover:bg-cream-dark/80 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600',
+    ghost: 'bg-transparent text-text-gray hover:bg-cream-dark/50 dark:text-gray-400 dark:hover:bg-gray-700'
   }
   const sizes = {
     sm: 'px-3 py-1.5 text-sm',

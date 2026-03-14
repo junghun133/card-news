@@ -8,92 +8,54 @@ export interface CardTemplate {
 }
 
 export const CARD_TEMPLATES: Record<LayoutType, CardTemplate> = {
-  'text-emphasis': {
-    id: 'text-emphasis',
-    name: '텍스트 강조형',
-    description: '깔끔한 텍스트 중심',
-    needsImage: false
-  },
   'image-background': {
     id: 'image-background',
     name: '이미지 배경형',
-    description: '이미지 + 오버레이',
+    description: '이미지 위에 텍스트 오버레이',
     needsImage: true
   },
-  'split-layout': {
-    id: 'split-layout',
-    name: '좌우 분할형',
-    description: '텍스트 + 이미지',
+  'top-bottom-split': {
+    id: 'top-bottom-split',
+    name: '상하 분할형',
+    description: '상단 이미지 + 하단 텍스트',
     needsImage: true
-  },
-  'gradient-card': {
-    id: 'gradient-card',
-    name: '그라데이션형',
-    description: '컬러풀 그라데이션',
-    needsImage: false
-  },
-  'minimal-card': {
-    id: 'minimal-card',
-    name: '미니멀형',
-    description: '깔끔 세련 디자인',
-    needsImage: false
   }
 }
 
 export const LAYOUT_STYLES = {
-  'text-emphasis': {
-    outerBg: '#F5F0E8',
-    cardBg: '#FFFFFF',
-    keywordBoxBg: '#D6EAF8',
-    keywordColor: '#1A1A2E',
-    keywordSize: 72,
-    descriptionColor: '#4A4A4A',
-    descriptionSize: 32,
-    sourceColor: '#888888',
-    sourceSize: 20,
-    cardPadding: 60,
-    cardBorderRadius: 16
-  },
   'image-background': {
+    // 커버 카드용 (slideIndex === 0) — 강한 하단 그라데이션
+    coverOverlayGradient:
+      'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 40%, transparent 100%)',
+    // 본문 카드용 — 표준 그라데이션
     overlayGradient:
       'linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 50%, transparent 100%)',
     fallbackBg: '#0D1117',
     keywordColor: '#FFFFFF',
-    keywordSize: 64,
+    coverKeywordSize: 72,
+    keywordSize: 48,
     keywordShadow: '2px 2px 8px rgba(0,0,0,0.5)',
     titleColor: '#E0E0E0',
-    titleSize: 32,
+    titleSize: 28,
+    descriptionColor: '#F0F0F0',
+    descriptionSize: 26,
     sourceColor: '#BBBBBB',
     sourceSize: 18,
     textPadding: 60
   },
-  'split-layout': {
+  'top-bottom-split': {
     outerBg: '#FFFFFF',
     titleBorderColor: '#2C7BE5',
     titleBorderWidth: 4,
-    titleColor: '#1A1A2E',
-    titleSize: 48,
-    descriptionColor: '#333333',
-    descriptionSize: 28,
+    keywordColor: '#1A1A2E',
+    keywordSize: 44,
+    titleColor: '#333333',
+    titleSize: 30,
+    descriptionColor: '#444444',
+    descriptionSize: 26,
     sourceColor: '#888888',
     sourceSize: 18,
-    splitRatio: { text: 55, image: 45 },
-    imageBorderRadius: 12,
-    contentPadding: 50
-  },
-  'gradient-card': {
-    gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    keywordColor: '#FFFFFF',
-    keywordSize: 80,
-    descriptionColor: 'rgba(255,255,255,0.85)',
-    descriptionSize: 28
-  },
-  'minimal-card': {
-    outerBg: '#FAFAFA',
-    accentColor: '#1A1A2E',
-    keywordColor: '#1A1A2E',
-    keywordSize: 64,
-    descriptionColor: '#666666',
-    descriptionSize: 24
+    imageSplitRatio: 50,
+    contentPadding: 40
   }
 } as const

@@ -9,7 +9,7 @@ export default function LayoutSelector() {
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-sm font-medium text-text-gray">레이아웃</span>
+      <span className="text-sm font-medium text-text-gray dark:text-gray-400">레이아웃</span>
       <div className="flex gap-2">
         {layouts.map((tmpl) => (
           <button
@@ -17,8 +17,8 @@ export default function LayoutSelector() {
             onClick={() => setLayout(tmpl.id as LayoutType)}
             className={`flex-1 rounded-lg border-2 px-3 py-3 text-center text-sm font-medium transition-all cursor-pointer ${
               selectedLayout === tmpl.id
-                ? 'border-blue-accent bg-light-blue/30 text-blue-accent'
-                : 'border-cream-dark bg-white text-text-gray hover:border-blue-accent/40'
+                ? 'border-blue-accent bg-light-blue/30 text-blue-accent dark:bg-blue-accent/10'
+                : 'border-cream-dark bg-white text-text-gray hover:border-blue-accent/40 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:border-blue-accent/40'
             }`}
           >
             <div className="font-semibold">{tmpl.name}</div>

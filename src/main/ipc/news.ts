@@ -1,7 +1,43 @@
-import { ipcMain } from 'electron'
-import { suggestTopics, generateCardData, generateCaption } from '../services/openai'
-import { searchImages, searchImagesByCategory } from '../services/unsplash'
-import { searchNews as serperSearch } from '../services/serper'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { readFile } from 'fs/promises'
+import { suggestTopics, generateCardData, generateCaption } from '../services/llm'
+import { searchImages, searchImagesByCategory, searchDiverseImages } from '../services/unsplash'
+import { searchNews as serperSearch, searchNewsByTopic, searchNewsByKeyword, searchVideos, searchGoogleImages } from '../services/serper'
+import { searchNaverNewsByKeyword, searchNaverNewsByTopic } from '../services/naver'
+import { enrichArticlesWithFullText } from '../services/articleFetcher'
+
+/**
+ * 카테고리 → 네이버 검색용 대표 키워드 매핑
+ */
+const NAVER_CATEGORY_KEYWORDS: Record<string, string> = {
+  ai: 'AI 인공지능',
+  tech: '반도체 IT 기술',
+  stocks: '주식 코스피',
+  economy: '경제 금리 환율',
+  war: '전쟁 국제정세',
+  society: '사회 이슈',
+  science: '과학 연구'
+}
+
+type Article = { title: string; snippet: string; source: string; url: string; date: string; provider?: string }
+
+/**
+ * 두 기사 배열을 합산하고 제목 기준 중복 제거
+ */
+function mergeArticles(...arrays: Article[][]): Article[] {
+  const seen = new Set<string>()
+  const merged: Article[] = []
+
+  for (const articles of arrays) {
+    for (const article of articles) {
+      if (seen.has(article.title)) continue
+      seen.add(article.title)
+      merged.push(article)
+    }
+  }
+
+  return merged
+}
 
 export function registerNewsHandlers(): void {
   /**
@@ -9,25 +45,37 @@ export function registerNewsHandlers(): void {
    */
   ipcMain.handle('news:search', async (_event, category: string) => {
     try {
-      // 1. Serper로 실제 뉴스 기사 수집
-      const articles = await serperSearch(category)
+      // 1. Serper + Naver 병렬로 실제 뉴스 기사 수집
+      const naverKeyword = NAVER_CATEGORY_KEYWORDS[category] || category
+      const [serperArticles, naverArticles] = await Promise.allSettled([
+        serperSearch(category),
+        searchNaverNewsByKeyword(naverKeyword)
+      ])
+
+      const serperResult = serperArticles.status === 'fulfilled' ? serperArticles.value : []
+      const naverResult = naverArticles.status === 'fulfilled' ? naverArticles.value : []
+
+      console.log(`[News] 카테고리 "${category}" 수집: Serper ${serperResult.length}건 + Naver ${naverResult.length}건`)
+
+      const articles = mergeArticles(serperResult, naverResult)
+      console.log(`[News] 합산 (중복 제거): ${articles.length}건`)
+
       if (articles.length === 0) {
         return { success: false, error: '뉴스를 찾을 수 없습니다.' }
       }
 
       // 2. OpenAI로 수집된 기사 분석 → 주제 추천
-      const topicResults = await suggestTopics(articles, category)
+      const { topics: topicResults, inputArticles } = await suggestTopics(articles, category)
 
-      // 3. 각 주제에 관련 기사 매핑
+      // 3. 각 주제에 관련 기사 매핑 (inputArticles = OpenAI에 전달된 셔플 배열 기준)
       const topics = topicResults.map((t: any) => {
-        // relatedArticleIndices가 있으면 해당 기사 매핑, 없으면 상위 3개
         const indices: number[] = t.relatedArticleIndices || []
         const related =
           indices.length > 0
             ? indices
-                .filter((idx: number) => idx >= 1 && idx <= articles.length)
-                .map((idx: number) => articles[idx - 1])
-            : articles.slice(0, 3)
+                .filter((idx: number) => idx >= 1 && idx <= inputArticles.length)
+                .map((idx: number) => inputArticles[idx - 1])
+            : inputArticles.slice(0, 3)
 
         return {
           id: `${t.category || category}-${t.id}-${Date.now()}`,
@@ -51,40 +99,160 @@ export function registerNewsHandlers(): void {
   })
 
   /**
-   * 선택한 주제를 교차검증하여 카드 데이터 생성
+   * 사용자 키워드로 뉴스 검색 → 주제 추천
+   */
+  ipcMain.handle('news:search-keyword', async (_event, keyword: string) => {
+    try {
+      if (!keyword?.trim()) {
+        return { success: false, error: '검색어를 입력해주세요.' }
+      }
+
+      // Serper + Naver 병렬 키워드 검색
+      const trimmed = keyword.trim()
+      const [serperArticles, naverArticles] = await Promise.allSettled([
+        searchNewsByKeyword(trimmed),
+        searchNaverNewsByKeyword(trimmed)
+      ])
+
+      const serperResult = serperArticles.status === 'fulfilled' ? serperArticles.value : []
+      const naverResult = naverArticles.status === 'fulfilled' ? naverArticles.value : []
+
+      console.log(`[News] 키워드 "${trimmed}" 수집: Serper ${serperResult.length}건 + Naver ${naverResult.length}건`)
+
+      const articles = mergeArticles(serperResult, naverResult)
+      console.log(`[News] 합산 (중복 제거): ${articles.length}건`)
+
+      if (articles.length === 0) {
+        return { success: false, error: `"${keyword}" 관련 뉴스를 찾을 수 없습니다.` }
+      }
+
+      // OpenAI로 주제 추천 (카테고리는 'all'로 처리)
+      const { topics: topicResults, inputArticles } = await suggestTopics(articles, 'all')
+
+      if (topicResults.length === 0) {
+        return { success: false, error: `"${keyword}" 관련 주제를 생성할 수 없습니다.` }
+      }
+
+      // 각 주제에 관련 기사 매핑 (inputArticles = OpenAI에 전달된 셔플 배열 기준)
+      const topics = topicResults.map((t: any) => {
+        const indices: number[] = t.relatedArticleIndices || []
+        const related =
+          indices.length > 0
+            ? indices
+                .filter((idx: number) => idx >= 1 && idx <= inputArticles.length)
+                .map((idx: number) => inputArticles[idx - 1])
+            : inputArticles.slice(0, 5)
+
+        return {
+          id: `keyword-${t.id}-${Date.now()}`,
+          category: t.category || 'society',
+          title: t.title,
+          summary: t.summary,
+          interestScore: t.interestScore,
+          sourceCount: t.sourceCount || related.length,
+          relatedArticles: related
+        }
+      })
+
+      topics.sort((a: any, b: any) => (b.interestScore || 0) - (a.interestScore || 0))
+
+      return { success: true, topics }
+    } catch (err: any) {
+      console.error('Keyword search error:', err)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * 선택한 주제를 교차검증하여 카드 데이터 생성 (5~8장 슬라이드)
    */
   ipcMain.handle('news:validate', async (_event, topic: any) => {
     try {
-      const cardData = await generateCardData(topic.title, topic.relatedArticles || [])
+      // 선택한 주제로 Serper + Naver 병렬 추가 검색하여 기사 풍부하게!
+      const existingArticles = topic.relatedArticles || []
+      let enrichedArticles = [...existingArticles]
 
-      // 이미지 검색과 캡션 생성을 병렬로 처리
-      let images: any[] = []
+      try {
+        const [serperAdditional, naverAdditional] = await Promise.allSettled([
+          searchNewsByTopic(topic.title),
+          searchNaverNewsByTopic(topic.title)
+        ])
+
+        const serperResult = serperAdditional.status === 'fulfilled' ? serperAdditional.value : []
+        const naverResult = naverAdditional.status === 'fulfilled' ? naverAdditional.value : []
+
+        console.log(`[News] 주제 "${topic.title}" 추가검색: Serper ${serperResult.length}건 + Naver ${naverResult.length}건`)
+
+        // 기존 기사 제목과 중복되지 않는 것만 추가
+        const existingTitles = new Set(existingArticles.map((a: any) => a.title))
+        const additionalArticles = mergeArticles(serperResult, naverResult)
+        const newArticles = additionalArticles.filter((a) => !existingTitles.has(a.title))
+        enrichedArticles = [...existingArticles, ...newArticles]
+        console.log(`[News] 기사 보강: 기존 ${existingArticles.length}건 + 추가 ${newArticles.length}건 = 총 ${enrichedArticles.length}건`)
+      } catch (err) {
+        console.warn('[News] 추가 검색 실패, 기존 기사로 진행:', err)
+      }
+
+      // 상위 5개 기사 본문 크롤링 (Jina Reader)
+      const articlesWithFullText = await enrichArticlesWithFullText(enrichedArticles, 5)
+
+      const cardResult = await generateCardData(topic.title, articlesWithFullText)
+
+      // 슬라이드별 이미지 쿼리 추출
+      const slideImageQueries = cardResult.slides.map(
+        (s: any) => s.slideImageQuery || ''
+      )
+
+      const firstSlide = cardResult.slides[0] || { keyword: topic.title, title: '', description: '' }
+
+      // 슬라이드별 다양한 이미지 + 캡션 생성을 병렬로 처리
+      let diverseImages: any[] = []
       let caption = ''
 
       const [imageResult, captionResult] = await Promise.allSettled([
-        searchImagesByCategory(topic.category, cardData.imageKeywords),
-        generateCaption({
-          keyword: cardData.keyword,
-          title: cardData.title,
-          description: cardData.description
-        })
+        searchDiverseImages(topic.category, slideImageQueries, cardResult.imageKeywords),
+        generateCaption(
+          {
+            keyword: firstSlide.keyword,
+            title: firstSlide.title,
+            description: cardResult.slides.map((s) => s.description).filter(Boolean).join(' ')
+          },
+          articlesWithFullText
+        )
       ])
 
-      if (imageResult.status === 'fulfilled') images = imageResult.value
+      if (imageResult.status === 'fulfilled') diverseImages = imageResult.value
       if (captionResult.status === 'fulfilled') caption = captionResult.value
+
+      // slides 배열을 CardData 형태로 변환 — 슬라이드별 다른 이미지 배정
+      const contentSlides = cardResult.slides.map((slide, i) => ({
+        keyword: slide.keyword,
+        title: slide.title,
+        description: slide.description,
+        source: i === cardResult.slides.length - 1 ? cardResult.sourceAttribution : '',
+        hashtags: i === cardResult.slides.length - 1 ? cardResult.hashtags : [],
+        backgroundImageUrl: diverseImages[i]?.url || diverseImages[0]?.url || null,
+        caption: i === 0 ? caption : ''
+      }))
+
+      // 마지막에 프로필 소개 카드 자동 추가
+      const profileCard = {
+        keyword: '',
+        title: '',
+        description: '',
+        source: '',
+        hashtags: [],
+        backgroundImageUrl: diverseImages[0]?.url || null,
+        caption: '',
+        isProfileCard: true
+      }
+
+      const slides = [...contentSlides, profileCard]
 
       return {
         success: true,
-        cardData: {
-          keyword: cardData.keyword,
-          title: cardData.title,
-          description: cardData.description,
-          source: cardData.sourceAttribution,
-          hashtags: cardData.hashtags,
-          backgroundImageUrl: images[0]?.url || null,
-          caption
-        },
-        images
+        slides,
+        images: diverseImages
       }
     } catch (err: any) {
       console.error('Validate error:', err)
@@ -102,6 +270,102 @@ export function registerNewsHandlers(): void {
     } catch (err: any) {
       console.error('Image search error:', err)
       return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * Google 이미지 검색 (Serper Images API)
+   */
+  ipcMain.handle('images:search-google', async (_event, query: string, page = 1) => {
+    try {
+      const images = await searchGoogleImages(query, 9, page)
+      return { success: true, images }
+    } catch (err: any) {
+      console.error('Google image search error:', err)
+      return { success: false, error: err.message, images: [] }
+    }
+  })
+
+  /**
+   * 로컬 이미지 파일 업로드 → data URL 반환
+   */
+  ipcMain.handle('images:upload-local', async (_event) => {
+    try {
+      const win = BrowserWindow.getFocusedWindow()
+      const result = await dialog.showOpenDialog(win!, {
+        title: '배경 이미지 선택',
+        filters: [
+          { name: '이미지', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }
+        ],
+        properties: ['openFile']
+      })
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, reason: 'canceled' }
+      }
+
+      const filePath = result.filePaths[0]
+      const buffer = await readFile(filePath)
+      const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
+      const mimeMap: Record<string, string> = {
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        webp: 'image/webp',
+        gif: 'image/gif',
+        bmp: 'image/bmp'
+      }
+      const mime = mimeMap[ext] || 'image/png'
+      const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`
+
+      return { success: true, dataUrl }
+    } catch (err: any) {
+      console.error('Image upload error:', err)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * 외부 이미지 URL → data URL 프록시 (CORS 우회)
+   */
+  ipcMain.handle('images:proxy', async (_event, imageUrl: string) => {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+
+      const response = await fetch(imageUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      })
+      clearTimeout(timeout)
+
+      if (!response.ok) {
+        throw new Error(`Image fetch failed: ${response.status}`)
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer())
+      const contentType = response.headers.get('content-type') || 'image/jpeg'
+      const dataUrl = `data:${contentType};base64,${buffer.toString('base64')}`
+
+      return { success: true, dataUrl }
+    } catch (err: any) {
+      console.error('[ImageProxy] Failed:', err.message)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * 관련 짧은 영상 검색 (1분 이하)
+   */
+  ipcMain.handle('videos:search', async (_event, query: string) => {
+    try {
+      const videos = await searchVideos(query)
+      return { success: true, videos }
+    } catch (err: any) {
+      console.error('Video search error:', err)
+      return { success: false, error: err.message, videos: [] }
     }
   })
 
