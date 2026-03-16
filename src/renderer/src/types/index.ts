@@ -52,10 +52,17 @@ export interface CardData {
   coverTitleSegments?: TitleSegment[]
   isProfileCard?: boolean
   showNewsIcon?: boolean
+  imageSearchQuery?: string
   // 폰트 사이즈 커스텀 (미지정 시 레이아웃 기본값)
   keywordFontSize?: number
   titleFontSize?: number
   descriptionFontSize?: number
+  // 콘텐츠 위치 (% 0-100, 드래그로 이동)
+  keywordPosition?: { x: number; y: number }
+  descriptionPosition?: { x: number; y: number }
+  sourcePosition?: { x: number; y: number }
+  watermark1Position?: { x: number; y: number }
+  watermark2Position?: { x: number; y: number }
 }
 
 export interface VideoResult {

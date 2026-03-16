@@ -61,6 +61,7 @@ export default function SearchPage() {
   const [loaded, setLoaded] = useState(false)
   const [validating, setValidating] = useState<string | null>(null)
   const [loadingStep, setLoadingStep] = useState<string>('')
+  const [loadingPercent, setLoadingPercent] = useState<number>(0)
   const [searchKeyword, setSearchKeyword] = useState('')
 
   // 탭 상태 — 기본: 과거 검색 (이전 수집 뉴스 확인 우선)
@@ -197,28 +198,32 @@ export default function SearchPage() {
 
   const handleSelectTopic = async (topic: TopicSuggestion) => {
     setValidating(topic.id)
-    setLoadingStep('AI가 뉴스 기사를 분석하고 있어요...')
+    setLoadingStep('준비 중...')
+    setLoadingPercent(5)
+
+    // 실시간 진행 이벤트 수신
+    let unsubscribe: (() => void) | null = null
+    if (window.api?.onValidateProgress) {
+      unsubscribe = window.api.onValidateProgress((step, percent) => {
+        if (step) setLoadingStep(step)
+        if (percent > 0) setLoadingPercent(percent)
+      })
+    }
 
     try {
       if (window.api) {
-        // 2초 후 단계 변경 (실제로 AI + 이미지 병렬 처리)
-        const stepTimer1 = setTimeout(() => setLoadingStep('카드뉴스 슬라이드를 생성하고 있어요...'), 3000)
-        const stepTimer2 = setTimeout(() => setLoadingStep('배경 이미지를 검색하고 있어요...'), 7000)
-        const stepTimer3 = setTimeout(() => setLoadingStep('거의 완료! 마무리 중이에요...'), 12000)
-
         const result = await window.api.validateNews(topic)
-
-        clearTimeout(stepTimer1)
-        clearTimeout(stepTimer2)
-        clearTimeout(stepTimer3)
 
         if (result.success && result.slides?.length > 0) {
           setLoadingStep('카드 생성 완료!')
+          setLoadingPercent(100)
           selectTopic(topic)
           setSlides(result.slides)
-          await new Promise((r) => setTimeout(r, 500))
+          await new Promise((r) => setTimeout(r, 400))
+          unsubscribe?.()
           setValidating(null)
           setLoadingStep('')
+          setLoadingPercent(0)
           navigate('/editor')
           return
         }
@@ -228,9 +233,11 @@ export default function SearchPage() {
       addToast('info', 'AI 검증 실패. 기본 데이터로 진행합니다.')
     }
 
+    unsubscribe?.()
     selectTopic(topic)
     setValidating(null)
     setLoadingStep('')
+    setLoadingPercent(0)
     navigate('/editor')
   }
 
@@ -415,14 +422,9 @@ export default function SearchPage() {
             {/* 프로그레스 바 */}
             <div className="h-1.5 w-64 overflow-hidden rounded-full bg-cream-dark dark:bg-gray-600">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-blue-accent to-purple-500 transition-all duration-1000"
+                className="h-full rounded-full bg-gradient-to-r from-blue-accent to-purple-500 transition-all duration-700"
                 style={{
-                  width: loadingStep.includes('분석') ? '25%'
-                    : loadingStep.includes('슬라이드') ? '50%'
-                    : loadingStep.includes('이미지') ? '75%'
-                    : loadingStep.includes('완료') ? '100%'
-                    : '90%',
-                  animation: loadingStep.includes('완료') ? 'none' : undefined
+                  width: `${loadingPercent}%`
                 }}
               />
             </div>

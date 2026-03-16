@@ -6,6 +6,11 @@ const api = {
   searchNewsByKeyword: (keyword: string) => ipcRenderer.invoke('news:search-keyword', keyword),
   validateNews: (topic: any) => ipcRenderer.invoke('news:validate', topic),
   generateCaption: (cardData: any) => ipcRenderer.invoke('news:caption', cardData),
+  onValidateProgress: (callback: (step: string, percent: number) => void) => {
+    const handler = (_e: any, step: string, percent: number) => callback(step, percent)
+    ipcRenderer.on('news:validate-progress', handler)
+    return () => ipcRenderer.removeListener('news:validate-progress', handler)
+  },
 
   // 이미지 검색
   searchImages: (query: string) => ipcRenderer.invoke('images:search', query),
@@ -21,6 +26,19 @@ const api = {
   // 내보내기
   saveImage: (dataUrl: string) => ipcRenderer.invoke('export:save', dataUrl),
   saveAllImages: (dataUrls: string[]) => ipcRenderer.invoke('export:save-all', dataUrls),
+
+  // 카드 영상
+  exportVideo: (options: any) => ipcRenderer.invoke('export:video', options),
+  exportVideoFromSource: (options: any) => ipcRenderer.invoke('export:video-from-source', options),
+  generateCardsFromVideo: (options: any) => ipcRenderer.invoke('video:generate-cards', options),
+  createCompositeVideo: (options: any) => ipcRenderer.invoke('video:create-composite', options),
+  selectBgm: () => ipcRenderer.invoke('export:select-bgm'),
+  selectVideo: () => ipcRenderer.invoke('export:select-video'),
+  onVideoProgress: (callback: (step: string, percent: number) => void) => {
+    const handler = (_e: any, step: string, percent: number) => callback(step, percent)
+    ipcRenderer.on('export:video-progress', handler)
+    return () => ipcRenderer.removeListener('export:video-progress', handler)
+  },
 
   // 설정
   getSettings: () => ipcRenderer.invoke('settings:get'),

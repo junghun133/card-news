@@ -166,9 +166,16 @@ export function registerNewsHandlers(): void {
   /**
    * 선택한 주제를 교차검증하여 카드 데이터 생성 (5~8장 슬라이드)
    */
-  ipcMain.handle('news:validate', async (_event, topic: any) => {
+  ipcMain.handle('news:validate', async (event, topic: any) => {
+    // 진행 상태를 렌더러에 실시간 전달
+    const sender = event.sender
+    const sendProgress = (step: string, percent: number) => {
+      try { sender.send('news:validate-progress', step, percent) } catch { /* destroyed */ }
+    }
+
     try {
-      // 선택한 주제로 Serper + Naver 병렬 추가 검색하여 기사 풍부하게!
+      // Step 1: 추가 기사 검색
+      sendProgress('관련 기사를 추가 검색하고 있어요...', 10)
       const existingArticles = topic.relatedArticles || []
       let enrichedArticles = [...existingArticles]
 
@@ -183,7 +190,6 @@ export function registerNewsHandlers(): void {
 
         console.log(`[News] 주제 "${topic.title}" 추가검색: Serper ${serperResult.length}건 + Naver ${naverResult.length}건`)
 
-        // 기존 기사 제목과 중복되지 않는 것만 추가
         const existingTitles = new Set(existingArticles.map((a: any) => a.title))
         const additionalArticles = mergeArticles(serperResult, naverResult)
         const newArticles = additionalArticles.filter((a) => !existingTitles.has(a.title))
@@ -193,9 +199,12 @@ export function registerNewsHandlers(): void {
         console.warn('[News] 추가 검색 실패, 기존 기사로 진행:', err)
       }
 
-      // 상위 5개 기사 본문 크롤링 (Jina Reader)
+      // Step 2: 기사 본문 크롤링
+      sendProgress('기사 본문을 수집하고 있어요...', 25)
       const articlesWithFullText = await enrichArticlesWithFullText(enrichedArticles, 5)
 
+      // Step 3: AI 카드 생성
+      sendProgress('AI가 카드뉴스를 생성하고 있어요...', 40)
       const cardResult = await generateCardData(topic.title, articlesWithFullText)
 
       // 슬라이드별 이미지 쿼리 추출
@@ -205,7 +214,8 @@ export function registerNewsHandlers(): void {
 
       const firstSlide = cardResult.slides[0] || { keyword: topic.title, title: '', description: '' }
 
-      // 슬라이드별 다양한 이미지 + 캡션 생성을 병렬로 처리
+      // Step 4: 이미지 검색 + 캡션 생성 병렬
+      sendProgress('배경 이미지와 캡션을 준비하고 있어요...', 70)
       let diverseImages: any[] = []
       let caption = ''
 
@@ -224,6 +234,9 @@ export function registerNewsHandlers(): void {
       if (imageResult.status === 'fulfilled') diverseImages = imageResult.value
       if (captionResult.status === 'fulfilled') caption = captionResult.value
 
+      // Step 5: 최종 조립
+      sendProgress('카드를 조립하고 있어요...', 90)
+
       // slides 배열을 CardData 형태로 변환 — 슬라이드별 다른 이미지 배정
       const contentSlides = cardResult.slides.map((slide, i) => ({
         keyword: slide.keyword,
@@ -232,7 +245,8 @@ export function registerNewsHandlers(): void {
         source: i === cardResult.slides.length - 1 ? cardResult.sourceAttribution : '',
         hashtags: i === cardResult.slides.length - 1 ? cardResult.hashtags : [],
         backgroundImageUrl: diverseImages[i]?.url || diverseImages[0]?.url || null,
-        caption: i === 0 ? caption : ''
+        caption: i === 0 ? caption : '',
+        imageSearchQuery: slide.slideImageQuery || ''
       }))
 
       // 마지막에 프로필 소개 카드 자동 추가
@@ -249,6 +263,8 @@ export function registerNewsHandlers(): void {
 
       const slides = [...contentSlides, profileCard]
 
+      sendProgress('카드 생성 완료!', 100)
+
       return {
         success: true,
         slides,
@@ -256,6 +272,7 @@ export function registerNewsHandlers(): void {
       }
     } catch (err: any) {
       console.error('Validate error:', err)
+      sendProgress('', 0)
       return { success: false, error: err.message }
     }
   })

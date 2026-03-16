@@ -10,18 +10,11 @@ interface Props {
 }
 
 export default function CardEditor({ slideIndex }: Props) {
-  const { cardData, setCardData } = useCardStore()
+  const { cardData, setCardData, globalKeywordFontSize, globalDescriptionFontSize, setGlobalFontSize } = useCardStore()
   const isCover = slideIndex === 0
 
-  // 폰트 크기를 모든 슬라이드에 일괄 적용
-  const setGlobalFontSize = (updates: Partial<CardData>) => {
-    const store = useCardStore.getState()
-    const newSlides = store.slides.map((s) => ({ ...s, ...updates }))
-    useCardStore.setState({
-      slides: newSlides,
-      cardData: { ...store.cardData, ...updates }
-    })
-  }
+  const kwSize = cardData.keywordFontSize || globalKeywordFontSize
+  const descSize = cardData.descriptionFontSize || globalDescriptionFontSize
 
   // --- 커버 타이틀 색상 편집기 ---
   const handleSegmentColor = (segIndex: number, color: string | undefined) => {
@@ -145,12 +138,12 @@ export default function CardEditor({ slideIndex }: Props) {
               type="range"
               min={24}
               max={96}
-              value={cardData.keywordFontSize || (isCover ? 72 : 48)}
-              onChange={(e) => setGlobalFontSize({ keywordFontSize: Number(e.target.value) })}
+              value={kwSize}
+              onChange={(e) => setGlobalFontSize(Number(e.target.value), descSize)}
               className="flex-1"
             />
             <span className="w-10 text-right text-text-gray dark:text-gray-400">
-              {cardData.keywordFontSize || (isCover ? 72 : 48)}px
+              {kwSize}px
             </span>
           </label>
           <label className="flex items-center gap-2 text-xs">
@@ -158,13 +151,13 @@ export default function CardEditor({ slideIndex }: Props) {
             <input
               type="range"
               min={14}
-              max={40}
-              value={cardData.descriptionFontSize || 26}
-              onChange={(e) => setGlobalFontSize({ descriptionFontSize: Number(e.target.value) })}
+              max={48}
+              value={descSize}
+              onChange={(e) => setGlobalFontSize(kwSize, Number(e.target.value))}
               className="flex-1"
             />
             <span className="w-10 text-right text-text-gray dark:text-gray-400">
-              {cardData.descriptionFontSize || 26}px
+              {descSize}px
             </span>
           </label>
         </div>

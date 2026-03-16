@@ -26,10 +26,10 @@ export const LAYOUT_STYLES = {
   'image-background': {
     // 커버 카드용 (slideIndex === 0) — 강한 하단 그라데이션
     coverOverlayGradient:
-      'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 40%, transparent 100%)',
+      'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.75) 35%, rgba(0,0,0,0.35) 60%, transparent 100%)',
     // 본문 카드용 — 표준 그라데이션
     overlayGradient:
-      'linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 50%, transparent 100%)',
+      'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.7) 35%, rgba(0,0,0,0.3) 60%, transparent 100%)',
     fallbackBg: '#0D1117',
     keywordColor: '#FFFFFF',
     coverKeywordSize: 72,

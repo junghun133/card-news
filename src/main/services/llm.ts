@@ -28,6 +28,34 @@ export async function generateCardData(
   return getModule().generateCardData(topic, articles)
 }
 
+export async function generateCardDataFromVideo(
+  videoInfo: { title: string; description: string; uploader: string; duration: number },
+  userContext?: string
+): Promise<CardResult> {
+  // 영상 정보를 기사 형태로 변환하여 기존 카드 생성 로직 재사용
+  const pseudoArticles: ArticleInput[] = [{
+    title: videoInfo.title,
+    snippet: videoInfo.description.slice(0, 500),
+    fullText: videoInfo.description,
+    source: videoInfo.uploader,
+    url: '',
+    date: ''
+  }]
+
+  if (userContext) {
+    pseudoArticles.push({
+      title: '사용자 제공 정보',
+      snippet: userContext,
+      fullText: userContext,
+      source: '사용자',
+      url: '',
+      date: ''
+    })
+  }
+
+  return getModule().generateCardData(videoInfo.title, pseudoArticles)
+}
+
 export async function generateCaption(
   cardData: { keyword: string; title: string; description: string },
   articles?: ArticleInput[]

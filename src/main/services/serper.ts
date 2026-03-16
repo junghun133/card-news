@@ -347,7 +347,10 @@ export async function searchGoogleImages(
   const apiKey = process.env.SERPER_API_KEY?.trim()
   if (!apiKey) throw new Error('SERPER_API_KEY가 설정되지 않았습니다.')
 
-  console.log(`[Serper] Google 이미지 검색: "${query}" (page=${page})`)
+  // Serper Images API는 page 대신 num 오프셋으로 페이지네이션
+  // page=1 → num개, page=2 → num*2개 요청 후 뒤쪽만 반환
+  const totalNeeded = num * page
+  console.log(`[Serper] Google 이미지 검색: "${query}" (page=${page}, total=${totalNeeded})`)
 
   try {
     const response = await fetch('https://google.serper.dev/images', {
@@ -360,8 +363,7 @@ export async function searchGoogleImages(
         q: query,
         gl: 'kr',
         hl: 'ko',
-        num,
-        page
+        num: totalNeeded
       })
     })
 
@@ -372,11 +374,15 @@ export async function searchGoogleImages(
     }
 
     const data = await response.json()
-    const images: any[] = data.images || []
+    const allImages: any[] = data.images || []
 
-    console.log(`[Serper] Google 이미지 결과: ${images.length}건`)
+    // page에 해당하는 범위만 반환 (이전 페이지 이미지 제외)
+    const startIdx = num * (page - 1)
+    const pageImages = allImages.slice(startIdx, startIdx + num)
 
-    return images.map((img) => ({
+    console.log(`[Serper] Google 이미지 결과: 전체 ${allImages.length}건 → page ${page}: ${pageImages.length}건`)
+
+    return pageImages.map((img) => ({
       title: img.title || '',
       imageUrl: img.imageUrl || '',
       thumbnailUrl: img.thumbnailUrl || img.imageUrl || '',

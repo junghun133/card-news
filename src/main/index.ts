@@ -3,6 +3,7 @@ import { join } from 'path'
 import { registerExportHandlers } from './ipc/export'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerNewsHandlers } from './ipc/news'
+import { registerVideoHandlers } from './ipc/video'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -39,6 +40,7 @@ app.whenReady().then(() => {
   registerExportHandlers()
   registerSettingsHandlers()
   registerNewsHandlers()
+  registerVideoHandlers()
 
   createWindow()
 

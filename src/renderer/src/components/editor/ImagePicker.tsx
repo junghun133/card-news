@@ -26,10 +26,15 @@ export default function ImagePicker() {
 
   useEffect(() => {
     if (selectedTopic) {
-      const slideKeyword = cardData.keyword?.replace(/\{\{|\}\}|\[\[|\]\]|"/g, '').trim()
-      const keyword = (slideKeyword || selectedTopic.title.split(',')[0]).slice(0, 20)
-      setQuery(keyword)
-      handleSearch(keyword, source)
+      // LLM이 생성한 영문 이미지 검색 키워드 우선 사용
+      const llmQuery = cardData.imageSearchQuery?.trim()
+      if (llmQuery) {
+        setQuery(llmQuery)
+      } else {
+        // fallback: 뉴스 주제 제목 사용
+        setQuery(selectedTopic.title.slice(0, 30))
+      }
+      setImages([])
     }
   }, [selectedTopic?.id, currentSlideIndex])
 

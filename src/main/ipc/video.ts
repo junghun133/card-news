@@ -1,0 +1,322 @@
+import { ipcMain, dialog, shell, app } from 'electron'
+import { join, dirname } from 'path'
+import { mkdir } from 'fs/promises'
+import { saveFramesToTemp, encodeVideo, processVideoSource, composeVideoWithTextPanels, cleanupTemp } from '../services/videoExport'
+import { downloadVideo, getVideoInfo } from '../services/videoDownload'
+import { generateCardDataFromVideo, generateCaption } from '../services/llm'
+
+/** 동적 출력 경로 (Documents/card-news-output) */
+function getOutputBase(): string {
+  return join(app.getPath('documents'), 'card-news-output')
+}
+
+function getDateFolder(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function getTimestamp(): string {
+  const now = new Date()
+  return `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
+}
+
+export function registerVideoHandlers(): void {
+  /**
+   * 릴스 영상 생성 — 카드 이미지 슬라이드쇼 방식
+   */
+  ipcMain.handle('export:video', async (event, options: {
+    dataUrls: string[]
+    durationPerCard?: number
+    transitionDuration?: number
+    transitionType?: string
+    aspectRatio?: '1:1' | '9:16'
+    bgmPath?: string
+  }) => {
+    const sender = event.sender
+    const sendProgress = (step: string, percent: number) => {
+      try { sender.send('export:video-progress', step, percent) } catch { /* destroyed */ }
+    }
+
+    let tempDir = ''
+
+    try {
+      // Step 1: 프레임 저장
+      sendProgress('카드 이미지를 준비하고 있어요...', 10)
+      const { dir, paths } = await saveFramesToTemp(options.dataUrls)
+      tempDir = dir
+      console.log(`[Video] ${paths.length}장 프레임 저장 완료: ${dir}`)
+
+      // Step 2: 출력 경로 생성
+      const dateDir = join(getOutputBase(), getDateFolder())
+      const subDir = join(dateDir, `reels-${getTimestamp()}`)
+      await mkdir(subDir, { recursive: true })
+      const outputPath = join(subDir, 'reels.mp4')
+
+      // Step 3: FFmpeg 인코딩
+      sendProgress('영상을 인코딩하고 있어요...', 20)
+      await encodeVideo(
+        {
+          dataUrls: options.dataUrls,
+          framePaths: paths,
+          outputPath,
+          durationPerCard: options.durationPerCard,
+          transitionDuration: options.transitionDuration,
+          transitionType: options.transitionType,
+          aspectRatio: options.aspectRatio,
+          bgmPath: options.bgmPath
+        },
+        (percent) => {
+          const adjusted = 20 + Math.round(percent * 0.75)
+          sendProgress('영상을 인코딩하고 있어요...', adjusted)
+        }
+      )
+
+      // Step 4: 완료
+      sendProgress('영상 생성 완료!', 100)
+      shell.openPath(subDir)
+
+      return { success: true, dir: subDir, outputPath }
+    } catch (err: any) {
+      console.error('[Video] Export error:', err)
+      sendProgress('', 0)
+      return { success: false, error: err.message }
+    } finally {
+      if (tempDir) await cleanupTemp(tempDir)
+    }
+  })
+
+  /**
+   * 릴스 영상 생성 — 영상 소스 방식 (URL 다운로드 또는 로컬 파일)
+   */
+  ipcMain.handle('export:video-from-source', async (event, options: {
+    videoUrl?: string
+    localPath?: string
+    aspectRatio?: '1:1' | '9:16'
+    bgmPath?: string
+  }) => {
+    const sender = event.sender
+    const sendProgress = (step: string, percent: number) => {
+      try { sender.send('export:video-progress', step, percent) } catch { /* destroyed */ }
+    }
+
+    let tempDir = ''
+
+    try {
+      let inputPath = ''
+
+      // Step 1: 영상 소스 확보
+      if (options.videoUrl) {
+        sendProgress('영상을 다운로드하고 있어요...', 5)
+        const result = await downloadVideo(options.videoUrl, (pct) => {
+          sendProgress('영상을 다운로드하고 있어요...', 5 + Math.round(pct * 0.4))
+        })
+        inputPath = result.filePath
+        tempDir = dirname(result.filePath)
+        console.log(`[Video] 다운로드 완료: ${inputPath}`)
+      } else if (options.localPath) {
+        inputPath = options.localPath
+        sendProgress('영상을 준비하고 있어요...', 10)
+      } else {
+        return { success: false, error: '영상 소스가 없습니다.' }
+      }
+
+      // Step 2: 출력 경로 생성
+      const dateDir = join(getOutputBase(), getDateFolder())
+      const subDir = join(dateDir, `reels-${getTimestamp()}`)
+      await mkdir(subDir, { recursive: true })
+      const outputPath = join(subDir, 'reels.mp4')
+
+      // Step 3: FFmpeg 변환 (리사이즈/크롭 + BGM)
+      sendProgress('영상을 변환하고 있어요...', 50)
+      await processVideoSource(
+        {
+          inputPath,
+          outputPath,
+          aspectRatio: options.aspectRatio,
+          bgmPath: options.bgmPath
+        },
+        (percent) => {
+          const adjusted = 50 + Math.round(percent * 0.45)
+          sendProgress('영상을 변환하고 있어요...', adjusted)
+        }
+      )
+
+      // Step 4: 완료
+      sendProgress('영상 생성 완료!', 100)
+      shell.openPath(subDir)
+
+      return { success: true, dir: subDir, outputPath }
+    } catch (err: any) {
+      console.error('[Video] Source export error:', err)
+      sendProgress('', 0)
+      return { success: false, error: err.message }
+    } finally {
+      if (tempDir) await cleanupTemp(tempDir)
+    }
+  })
+
+  /**
+   * 합성 영상 생성 — 상단 영상 + 하단 텍스트 패널
+   */
+  ipcMain.handle('video:create-composite', async (event, options: {
+    videoUrl?: string
+    localVideoPath?: string
+    textPanelDataUrls: string[]
+    videoDuration: number
+    startSec?: number
+    bgmPath?: string
+  }) => {
+    const sender = event.sender
+    const sendProgress = (step: string, percent: number) => {
+      try { sender.send('export:video-progress', step, percent) } catch { /* destroyed */ }
+    }
+
+    let videoTempDir = ''
+    let panelTempDir = ''
+
+    try {
+      let inputPath = ''
+
+      // Step 1: 영상 소스 확보
+      if (options.videoUrl) {
+        sendProgress('영상을 다운로드하고 있어요...', 5)
+        const result = await downloadVideo(options.videoUrl, (pct) => {
+          sendProgress('영상을 다운로드하고 있어요...', 5 + Math.round(pct * 0.3))
+        })
+        inputPath = result.filePath
+        videoTempDir = dirname(result.filePath)
+        console.log(`[Video] 다운로드 완료: ${inputPath}`)
+      } else if (options.localVideoPath) {
+        inputPath = options.localVideoPath
+        sendProgress('영상을 준비하고 있어요...', 10)
+      } else {
+        return { success: false, error: '영상 소스가 없습니다.' }
+      }
+
+      // Step 2: 텍스트 패널 PNG 저장
+      sendProgress('텍스트 패널을 준비하고 있어요...', 35)
+      const { dir: tDir, paths: panelPaths } = await saveFramesToTemp(options.textPanelDataUrls)
+      panelTempDir = tDir
+      console.log(`[Video] ${panelPaths.length}장 텍스트 패널 저장 완료`)
+
+      // Step 3: 출력 경로 생성
+      const dateDir = join(getOutputBase(), getDateFolder())
+      const subDir = join(dateDir, `reels-${getTimestamp()}`)
+      await mkdir(subDir, { recursive: true })
+      const outputPath = join(subDir, 'reels.mp4')
+
+      // Step 4: FFmpeg 합성 (영상 상단 + 텍스트 하단)
+      sendProgress('영상을 합성하고 있어요...', 40)
+      await composeVideoWithTextPanels(
+        {
+          videoPath: inputPath,
+          textPanelPaths: panelPaths,
+          outputPath,
+          videoDuration: options.videoDuration,
+          startSec: options.startSec || 0,
+          bgmPath: options.bgmPath
+        },
+        (percent) => {
+          const adjusted = 40 + Math.round(percent * 0.55)
+          sendProgress('영상을 합성하고 있어요...', adjusted)
+        }
+      )
+
+      // Step 5: 완료
+      sendProgress('영상 생성 완료!', 100)
+      shell.openPath(subDir)
+
+      return { success: true, dir: subDir, outputPath }
+    } catch (err: any) {
+      console.error('[Video] Composite export error:', err)
+      sendProgress('', 0)
+      return { success: false, error: err.message }
+    } finally {
+      if (videoTempDir) await cleanupTemp(videoTempDir)
+      if (panelTempDir) await cleanupTemp(panelTempDir)
+    }
+  })
+
+  /**
+   * BGM 파일 선택 다이얼로그
+   */
+  ipcMain.handle('export:select-bgm', async () => {
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: '배경음악 선택',
+      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'm4a'] }],
+      properties: ['openFile']
+    })
+    if (canceled || filePaths.length === 0) return { success: false }
+    return { success: true, filePath: filePaths[0] }
+  })
+
+  /**
+   * 로컬 영상 파일 선택 다이얼로그
+   */
+  ipcMain.handle('export:select-video', async () => {
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: '영상 파일 선택',
+      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] }],
+      properties: ['openFile']
+    })
+    if (canceled || filePaths.length === 0) return { success: false }
+    return { success: true, filePath: filePaths[0] }
+  })
+
+  /**
+   * 영상 URL → 메타데이터 추출 + LLM 카드뉴스 문구 생성
+   */
+  ipcMain.handle('video:generate-cards', async (event, options: {
+    videoUrl: string
+    userContext?: string
+  }) => {
+    console.log('[Video] video:generate-cards called with:', options.videoUrl)
+    const sender = event.sender
+    const sendProgress = (step: string, percent: number) => {
+      try { sender.send('export:video-progress', step, percent) } catch { /* destroyed */ }
+    }
+
+    try {
+      // Step 1: 영상 메타데이터 추출
+      sendProgress('영상 정보를 가져오고 있어요...', 10)
+      console.log('[Video] Calling getVideoInfo...')
+      const videoInfo = await getVideoInfo(options.videoUrl)
+      console.log('[Video] getVideoInfo result:', videoInfo.title)
+
+      // Step 2: LLM으로 카드뉴스 생성
+      sendProgress('AI가 카드뉴스 문구를 생성하고 있어요...', 40)
+      const cardResult = await generateCardDataFromVideo(videoInfo, options.userContext)
+
+      // Step 3: 캡션 생성
+      sendProgress('캡션을 생성하고 있어요...', 75)
+      const firstSlide = cardResult.slides[0]
+      let caption = ''
+      try {
+        caption = await generateCaption({
+          keyword: firstSlide?.keyword || videoInfo.title,
+          title: firstSlide?.title || '',
+          description: firstSlide?.description || ''
+        })
+      } catch (err) {
+        console.warn('[Video] Caption generation failed:', err)
+      }
+
+      sendProgress('완료!', 100)
+
+      return {
+        success: true,
+        videoInfo: {
+          title: videoInfo.title,
+          uploader: videoInfo.uploader,
+          duration: videoInfo.duration
+        },
+        cardResult,
+        caption
+      }
+    } catch (err: any) {
+      console.error('[Video] Card generation error:', err)
+      sendProgress('', 0)
+      return { success: false, error: err.message }
+    }
+  })
+}

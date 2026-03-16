@@ -3,12 +3,15 @@ import { toPng, toJpeg } from 'html-to-image'
 import { CARD_SIZE } from '@/lib/designTokens'
 import { useCardStore } from '@/stores/useCardStore'
 import { PROFILE_ICON_SVG } from '@/lib/profileIcon'
+import { exportCardAsGif } from '@/lib/gifExport'
+import { useDrag } from '@/hooks/useDrag'
 import ImageBackgroundCard from './ImageBackgroundCard'
 import TopBottomSplitCard from './TopBottomSplitCard'
 
 export interface CardCanvasHandle {
   exportPng: () => Promise<string>
   exportJpeg: () => Promise<string>
+  exportGif: (gifUrl: string, onProgress?: (pct: number) => void) => Promise<string>
 }
 
 interface Props {
@@ -16,11 +19,70 @@ interface Props {
   slideIndex?: number
 }
 
+const DEFAULT_WM1 = { x: 2.5, y: 3 }
+
+function WatermarkSticker({
+  position,
+  scale,
+  onDragEnd
+}: {
+  position: { x: number; y: number }
+  scale: number
+  onDragEnd: (pos: { x: number; y: number }) => void
+}) {
+  const { localPos, isDragging, handleMouseDown } = useDrag({ position, scale, onDragEnd })
+
+  return (
+    <div
+      onMouseDown={handleMouseDown}
+      style={{
+        position: 'absolute',
+        left: `${localPos.x}%`,
+        top: `${localPos.y}%`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        background: 'rgba(255, 255, 255, 0.95)',
+        borderRadius: 14,
+        padding: '8px 16px 8px 10px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        zIndex: isDragging ? 50 : 10,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        userSelect: 'none' as const
+      }}
+    >
+      <img
+        src={PROFILE_ICON_SVG}
+        alt=""
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: '50%'
+        }}
+        draggable={false}
+      />
+      <span
+        style={{
+          fontSize: 22,
+          fontWeight: 700,
+          color: '#262626',
+          letterSpacing: '0.01em',
+          fontFamily: "'A2G', 'Noto Sans KR', sans-serif",
+          whiteSpace: 'nowrap'
+        }}
+      >
+        pony__news
+      </span>
+    </div>
+  )
+}
+
 const CardCanvas = forwardRef<CardCanvasHandle, Props>(({ scale = 0.45, slideIndex }, ref) => {
   const cardRef = useRef<HTMLDivElement>(null)
-  const { selectedLayout, cardData, currentSlideIndex } = useCardStore()
+  const { selectedLayout, cardData, currentSlideIndex, setCardData } = useCardStore()
 
   const effectiveIndex = slideIndex ?? currentSlideIndex
+  const wm1Pos = cardData.watermark1Position ?? DEFAULT_WM1
 
   useImperativeHandle(ref, () => ({
     exportPng: async () => {
@@ -41,15 +103,24 @@ const CardCanvas = forwardRef<CardCanvasHandle, Props>(({ scale = 0.45, slideInd
         quality: 0.92,
         cacheBust: true
       })
+    },
+    exportGif: async (gifUrl: string, onProgress?: (pct: number) => void) => {
+      if (!cardRef.current) throw new Error('Card ref not available')
+      return exportCardAsGif({
+        cardElement: cardRef.current,
+        gifUrl,
+        size: CARD_SIZE,
+        onProgress
+      })
     }
   }))
 
   const renderCard = () => {
     switch (selectedLayout) {
       case 'image-background':
-        return <ImageBackgroundCard {...cardData} slideIndex={effectiveIndex} />
+        return <ImageBackgroundCard {...cardData} slideIndex={effectiveIndex} scale={scale} />
       case 'top-bottom-split':
-        return <TopBottomSplitCard {...cardData} slideIndex={effectiveIndex} />
+        return <TopBottomSplitCard {...cardData} slideIndex={effectiveIndex} scale={scale} />
     }
   }
 
@@ -81,43 +152,12 @@ const CardCanvas = forwardRef<CardCanvasHandle, Props>(({ scale = 0.45, slideInd
         >
           {renderCard()}
 
-          {/* 워터마크 — 모든 카드 좌상단 */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 32,
-              left: 28,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              zIndex: 10,
-              pointerEvents: 'none'
-            }}
-          >
-            <img
-              src={PROFILE_ICON_SVG}
-              alt=""
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                background: 'rgba(255,255,255,0.8)',
-                padding: 2
-              }}
-            />
-            <span
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
-                color: 'rgba(255,255,255,0.6)',
-                textShadow: '1px 1px 4px rgba(0,0,0,0.5)',
-                letterSpacing: '0.02em',
-                fontFamily: "'A2G', 'Noto Sans KR', sans-serif"
-              }}
-            >
-              pony__news
-            </span>
-          </div>
+          {/* 워터마크 스티커 */}
+          <WatermarkSticker
+            position={wm1Pos}
+            scale={scale}
+            onDragEnd={(pos) => setCardData({ watermark1Position: pos })}
+          />
         </div>
       </div>
     </div>

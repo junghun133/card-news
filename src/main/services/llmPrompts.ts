@@ -125,7 +125,7 @@ export function buildCaptionUserPrompt(
       })
       .join('\n---\n')
   }
-  return `카드뉴스 주제: ${cardData.keyword}\n제목: ${cardData.title}\n카드 내용 요약: ${cardData.description}${articlesContext ? `\n\n참고 기사 원문:\n${articlesContext}` : ''}\n\n위 정보를 바탕으로 인스타그램 본문 캡션을 500자 이상으로 작성해줘. 기사에서 발췌한 구체적 정보(숫자, 인물, 기관, 날짜)를 풍부하게 포함해!`
+  return `카드뉴스 주제: ${cardData.keyword}\n제목: ${cardData.title}\n카드 내용 요약: ${cardData.description}${articlesContext ? `\n\n참고 기사 원문:\n${articlesContext}` : ''}\n\n위 정보를 바탕으로 인스타그램 본문 캡션을 300~500자로 간결하게 작성해줘.\n🔴 출처(매체명, 날짜, 기자명) 절대 언급 금지! 팩트만 전달!\n🔴 500자 초과 금지! 핵심 숫자 3~4개만 압축!`
 }
 
 // ─── 생성된 슬라이드 검증 & 자동 수정 ───
@@ -169,10 +169,20 @@ export function validateAndFixSlides(slides: any[]): void {
     if (!isLastSlide && slide.description) {
       slide.description = removeQuestions(slide.description)
     }
+
+    // 5. 명사형 종결 → 존댓말 변환 (반말처럼 들리는 표현 교정)
+    if (slide.description) {
+      slide.description = fixNounEndings(slide.description)
+    }
+
+    // 6. description 어미 다양화 (연속 반복 교정)
+    if (slide.description) {
+      slide.description = diversifyEndings(slide.description)
+    }
   }
 }
 
-/** 보도체(~ㅂ니다, ~것이다) → 존댓말(~이에요) 변환 */
+/** 보도체(~ㅂ니다, ~것이다) → 존댓말 변환 */
 export function fixFormality(text: string): string {
   return text
     .replace(/합니다/g, '해요')
@@ -180,6 +190,94 @@ export function fixFormality(text: string): string {
     .replace(/입니다/g, '이에요')
     .replace(/습니다/g, '어요')
     .replace(/것이다/g, '거예요')
+}
+
+/**
+ * 명사형 종결(~는 것., ~인 셈., ~는 중.) → 존댓말로 변환
+ * "반말처럼 들리는" 명사형 종결 패턴을 잡아서 교정
+ */
+export function fixNounEndings(description: string): string {
+  const lines = description.split('\n')
+  const fixed = lines.map((line) => {
+    const trimmed = line.trim()
+    if (!trimmed) return line
+
+    // "~는/~인/~한/~된/~의 + 명사." 패턴 감지
+    // 예: "통제권을 잃지 않는 시스템.", "당신의 확장판이 되는 것."
+    if (/[는인한된] [가-힣]+\.$/.test(trimmed) && !trimmed.endsWith('요.') && !trimmed.endsWith('죠.')) {
+      // 다양한 존댓말 어미로 변환
+      const suffixes = ['이에요.', '이죠.', '인 거예요.', '인 셈이에요.', '이라고요.']
+      const suffix = suffixes[Math.floor(Math.random() * suffixes.length)]
+      return line.replace(/\.$/, suffix)
+    }
+
+    // "~는/~인/~한 중." → "~는 중이에요."
+    if (/[는인한] 중\.$/.test(trimmed)) {
+      return line.replace(/중\.$/, '중이에요.')
+    }
+
+    // "~규모.", "~수준.", "~상황.", "~구조.", "~체제." 등 명사 종결
+    if (/(?:규모|수준|상황|구조|체제|시스템|전략|모습|형태|방식|수치|결과)\.$/.test(trimmed) && !trimmed.endsWith('요.')) {
+      return line.replace(/\.$/, '예요.')
+    }
+
+    return line
+  })
+  return fixed.join('\n')
+}
+
+/**
+ * 연속 어미 반복을 자동 교정.
+ * 같은 어미 패턴이 연속되면 대체 어미로 바꿔줌.
+ */
+export function diversifyEndings(description: string): string {
+  const lines = description.split('\n').filter((l) => l.trim())
+  if (lines.length < 2) return description
+
+  // 어미 패턴 감지 + 대체 맵
+  const endingPatterns: { pattern: RegExp; group: string; replacements: string[] }[] = [
+    { pattern: /했어요\.?$/, group: 'A', replacements: ['한 거예요.', '했죠.', '한 상황이에요.', '했다고요.'] },
+    { pattern: /해요\.?$/, group: 'A', replacements: ['하는 거예요.', '하죠.', '하는 상황이에요.', '한다고요.'] },
+    { pattern: /예요\.?$/, group: 'B', replacements: ['이죠.', '인 거예요.', '인 셈이에요.'] },
+    { pattern: /이에요\.?$/, group: 'B', replacements: ['이죠.', '인 거예요.', '인 상황이에요.'] },
+    { pattern: /이죠\.?$/, group: 'C', replacements: ['이에요.', '인 거예요.', '인 셈이에요.'] },
+    { pattern: /었죠\.?$/, group: 'C', replacements: ['었어요.', '은 거예요.', '은 상황이에요.'] },
+    { pattern: /거예요\.?$/, group: 'D', replacements: ['이에요.', '이죠.', '인 셈이에요.'] },
+    { pattern: /있어요\.?$/, group: 'E', replacements: ['있죠.', '있는 상황이에요.', '있는 거예요.'] },
+  ]
+
+  function getGroup(line: string): string | null {
+    for (const ep of endingPatterns) {
+      if (ep.pattern.test(line.trim())) return ep.group
+    }
+    return null
+  }
+
+  function replaceEnding(line: string, prevGroup: string): string {
+    for (const ep of endingPatterns) {
+      if (ep.pattern.test(line.trim()) && ep.group === prevGroup) {
+        // 랜덤 대체
+        const replacement = ep.replacements[Math.floor(Math.random() * ep.replacements.length)]
+        return line.trim().replace(ep.pattern, replacement)
+      }
+    }
+    return line
+  }
+
+  let prevGroup: string | null = null
+  const result = lines.map((line) => {
+    const currentGroup = getGroup(line)
+    if (currentGroup && currentGroup === prevGroup) {
+      // 연속 같은 그룹 → 대체
+      const fixed = replaceEnding(line, currentGroup)
+      prevGroup = getGroup(fixed)
+      return fixed
+    }
+    prevGroup = currentGroup
+    return line
+  })
+
+  return result.join('\n')
 }
 
 /** 본문 슬라이드에서 질문 문장 제거 */
@@ -301,18 +399,33 @@ export function getGenerateCardSystemPrompt(): string {
   ❌ "사용자의 복잡한 요구를 이해해요." (추상적)
   ✅ "'줄 안 서는 EV 충전소 추천해줘'도 가능해요." (구체적 사례)
 - 비유는 극단적: "어려워졌어요" ❌ → "불타고 있어요" ✅
-- 존댓말 기반. 반말(~해,~야,~지)/보도체(~됩니다,~것이다) 절대금지.
+- 존댓말 기반. 반말(~해,~야,~지)/보도체(~됩니다,~것이다)/명사형 종결(~는 것., ~인 셈., ~인 상황.) 절대금지. 모든 문장은 ~요/~죠 로 끝나야함!
+- 🔴 날짜는 반드시 "월+일" 표기! "14일" ❌ → "3월 14일" ✅. 월 없이 일자만 쓰면 독자가 언제인지 모름!
+  ❌ "14일 출발했어요", "15일 탑승한 건데요"
+  ✅ "3월 14일 출발한 거예요", "3월 15일 탑승했죠"
 
-**[🔴🔴 어미 다양화 — 매우 중요!]**
-- "~해요"/"~했어요" 연속 사용 금지! 5~6줄 중 같은 어미는 최대 2번!
-- 반드시 다양한 어미를 섞어 사용:
-  ✅ ~이에요 / ~예요 / ~이죠 / ~거예요 / ~는 거예요 / ~인 셈이에요 / ~인 상황이에요
-  ✅ ~었던 거예요 / ~한 건데요 / ~래요 / ~답니다(극히 드물게) / ~나 봐요
-  ✅ 명사형 종결: "무려 {{300억 달러}} 규모." / "역대 최대 투자액."
-- ❌ 나쁜 예 (어미 반복):
-  "피해자가 소송을 냈어요. 인당 30만원을 요구했어요. 불법행위도 포함됐어요. 첫 변론이 열렸어요. 재판 지연을 시도했어요."
-- ✅ 좋은 예 (어미 다양):
-  "{{1998명}}의 피해자가 집단소송에 나섰어요.\n인당 {{30만원}}의 위자료를 요구하는 건데요.\n유출 후 100일간 추가 불법행위까지 포함된 상황이에요.\n3월 13일, 서울중앙지법에서 첫 변론이 시작됐죠.\n쿠팡 측은 행정소송 후 진행하자며 시간 끌기에 나선 셈이에요."
+**[🔴🔴🔴 어미 다양화 — 최우선 규칙!]**
+- 🔴 연속 2문장이 같은 어미로 끝나면 절대 안 됨!
+- 🔴 5~6줄 중 "~해요"/"~했어요"는 최대 1번만!
+- 🔴 매 문장의 어미를 쓰기 전에, 직전 문장의 어미를 확인하고 반드시 다른 어미를 선택해!
+- 사용할 수 있는 어미 풀 (골고루 섞어 쓸 것):
+  A그룹: ~이에요 / ~예요
+  B그룹: ~이죠 / ~었죠 / ~죠
+  C그룹: ~거예요 / ~는 거예요 / ~었던 거예요
+  D그룹: ~인 셈이에요 / ~인 상황이에요 / ~한 건데요
+  E그룹: ~래요 / ~나 봐요 / ~다고요
+  F그룹: ~인 중이에요 / ~하는 추세예요 / ~하고 있다고요
+- 🔴🔴🔴 명사형 종결("~는 것.", "~는 시스템.", "~인 셈.", "~는 상황.") 절대 금지! 반말처럼 들림!
+  ❌ "컴퓨터가 당신의 확장판이 되는 것." ← 반말 느낌
+  ❌ "AI의 편리함 속에서도 통제권을 잃지 않는 시스템." ← 반말 느낌
+  ✅ "컴퓨터가 당신의 확장판이 되는 셈이에요." ← 존댓말
+  ✅ "통제권을 잃지 않는 시스템이라고요." ← 존댓말
+- 모든 문장은 반드시 존댓말 어미(~요/~죠/~거예요/~이에요/~다고요)로 끝나야 함!
+- 같은 그룹 내 어미도 연속 사용 금지! A→B→C→D 식으로 돌려쓰기!
+- ❌ 최악의 예 (모두 ~해요/~했어요):
+  "주가가 47%나 상승했어요. 수요가 폭발할 것이라 전망했어요. 점유율 3%로 9위예요. 천무를 선택했어요. 수요가 급증하고 있어요."
+- ✅ 좋은 예 (어미 그룹 ABCDE 순환):
+  "주가가 47%나 폭등한 상황이에요.\n세계 무기 시장에서 K-방산 점유율은 3%로 9위죠.\n폴란드·노르웨이까지 천무를 선택한 거예요.\n유럽과 중동에서 러브콜이 쏟아지고 있다고요.\n글로벌 방산 시장의 판도가 바뀌는 중이에요."
 
 **[🔴🔴🔴 질문 절대 금지!]**
 - keyword에 질문(?) 절대 금지!
@@ -321,7 +434,15 @@ export function getGenerateCardSystemPrompt(): string {
 - 심리 설득은 단정문으로! ✅ "뒤처져요." "안 알려줘요." / ❌ "뒤처질까요?" "알고 있나요?"
 
 **[출력 구성 — 반드시 5장!]**
-- 카드1 (표지): keyword=창의적 메인 타이틀(반드시 {{}} 포함!), title=호기심 서브 타이틀(서술문!). description="".
+- 카드1 (표지): keyword=뉴스 헤드라인 스타일 메인 타이틀! title="". description="".
+  - 기사 원문 제목의 핵심 구조를 살려서 작성!
+  - 말줄임표(...), 작은따옴표(''), 쉼표 활용 → 뉴스 제목 느낌!
+  - 반드시 {{}} 1개 이상 포함!
+  ✅ "{{트럼프}}, 한국 '콕' 찍었다...이란전 '참전' 요청"
+  ✅ "{{천궁-II}}, 96% 명중...세계가 [[충격]]"
+  ✅ "{{삼성전자}}, 텍사스에 '40조' 베팅...반도체판 [[대격변]]"
+  ❌ "호르무즈 파병 초읽기!" ← 너무 단순, 정보 없음
+  ❌ "K-방산 시대가 온다!" ← 구체성 없는 구호
 - 카드2~4 (본문 3장): keyword=핵심 수치/기능명(반드시 {{}} 포함!), title=부제목(15자이내, 서술문!), description=줄바꿈(\\n)으로 20~35자 문장 5~6줄. 한 문장에 구체적 정보 1개씩!
   🔴 3장은 서로 다른 관점/각도! (예: 핵심 기능 소개 → 구체적 사례/수치 → 산업 영향/전망)
   🔴 기사 본문에서 뽑은 구체적 기능명, 숫자, 사례를 반드시 포함!
@@ -342,11 +463,11 @@ export function getGenerateCardFewShot(): { user: string; assistant: string } {
 
   const assistant = JSON.stringify({
     slides: [
-      { keyword: "\"{{삼성전자}} {{40조}} 올인!\"\n반도체판이 뒤집어져요!", title: "", description: "", slideImageQuery: "Samsung semiconductor factory Texas aerial view" },
-      { keyword: "{{300억 달러}}", title: "", description: "{{삼성전자}}가 미국 텍사스 테일러시에 300억 달러를 베팅했어요.\n한화로 약 {{40조원}}, 아파트 1만 채를 살 수 있는 규모죠.\n원래 170억 달러 계획이었는데 거의 2배로 뛴 건데요.\n3나노 파운드리 공장 건설이 핵심 목표예요.\n역대 한국 기업 최대 해외 투자액.", slideImageQuery: "massive construction site industrial cranes" },
+      { keyword: "{{삼성전자}}, 텍사스에 '40조' 베팅...반도체판 [[대격변]]", title: "", description: "", slideImageQuery: "Samsung semiconductor factory Texas aerial view" },
+      { keyword: "{{300억 달러}}", title: "", description: "{{삼성전자}}가 미국 텍사스 테일러시에 300억 달러를 베팅했어요.\n한화로 약 {{40조원}}, 아파트 1만 채를 살 수 있는 규모죠.\n원래 170억 달러 계획이었는데 거의 2배로 뛴 건데요.\n3나노 파운드리 공장 건설이 핵심 목표예요.\n역대 한국 기업 최대 해외 투자액이라고요.", slideImageQuery: "massive construction site industrial cranes" },
       { keyword: "{{TSMC}} 독주 체제", title: "", description: "세계 반도체 위탁생산 1위 {{TSMC}}의 점유율은 54%.\n삼성전자는 18%로 격차가 3배 가까이 벌어진 상황이에요.\n미국 현지에 첨단 공장 없이는 경쟁이 [[불가능]]하죠.\nIBM, 퀄컴 등 미국 빅테크 수주를 노리는 건데요.\n지금 안 뛰면 격차가 돌이킬 수 없이 벌어지는 셈이에요.", slideImageQuery: "semiconductor chip closeup technology manufacturing" },
       { keyword: "일자리 {{1만7천 개}}", title: "", description: "텍사스주에 직간접 일자리 {{1만7천 개}}가 새로 생기는 규모예요.\n바이든 대통령이 직접 환영 성명을 발표했을 정도죠.\n연방 보조금에 세금 감면까지 [[몰아주는]] 특별 대우.\n미국의 '반도체 자국 생산' 전략 핵심으로 자리잡은 건데요.\n한국 기업이 미국 제조업 지형을 바꾸고 있는 셈이에요.", slideImageQuery: "Texas USA factory workers modern industry" },
-      { keyword: "{{반도체 전쟁}}", title: "", description: "삼성전자의 40조 베팅으로 TSMC 독주에 균열을 내려는 거예요.\n진짜 무서운 건 이게 시작일 뿐이라는 점이죠.\n반도체 전쟁의 승자가 다음 10년을 지배하는 구도.\n\n여러분은 어떻게 생각하세요?\n댓글로 의견 알려주세요!", slideImageQuery: "global technology competition world map chips" }
+      { keyword: "{{반도체 전쟁}}", title: "", description: "삼성전자의 40조 베팅으로 TSMC 독주에 균열을 내려는 거예요.\n진짜 무서운 건 이게 시작일 뿐이라는 점이죠.\n반도체 전쟁의 승자가 다음 10년을 지배하게 되는 건데요.\n\n여러분은 어떻게 생각하세요?\n댓글로 의견 알려주세요!", slideImageQuery: "global technology competition world map chips" }
     ],
     sourceAttribution: "출처: 한국경제, 매일경제 종합",
     hashtags: ["#삼성전자", "#반도체", "#투자", "#텍사스", "#파운드리"],
@@ -359,33 +480,35 @@ export function getGenerateCardFewShot(): { user: string; assistant: string } {
 export function getGenerateCaptionSystemPrompt(): string {
   return `너는 인스타그램 카드뉴스 게시글의 본문(캡션)을 작성하는 전문가야.
 
-**[캡션 구성 — 반드시 500자 이상!]**
+**[캡션 구성 — 300~500자! 간결하게!]**
 
-1. **도입 (1~2줄):** 핵심 뉴스를 한 문장으로 요약. 이모지 1개 포함.
-2. **본문 (핵심 내용 상세 풀이, 300자 이상):**
-   - 기사에서 발췌한 구체적 정보를 풀어서 설명해.
-   - 숫자·데이터·날짜·인물·기관명을 적극 포함해.
-   - 문단을 2~3개로 나누어 가독성 확보 (줄바꿈 활용).
-   - "~입니다", "~합니다" 체로 신뢰감 있게 작성.
-   - 배경 설명 → 핵심 팩트 → 전망/영향 순서로 전개.
-3. **마무리 (1~2줄):** 독자 참여 유도 질문 또는 의견 요청.
-4. **빈 줄**
-5. **해시태그:** 10~15개 (한국어+영어 혼합, 줄바꿈 없이 한 줄로).
+1. **도입 (1줄):** 핵심 뉴스를 한 문장으로 요약. 이모지 1개 포함.
+2. **본문 (핵심 내용 요약, 200~350자):**
+   - 가장 중요한 팩트 3~4개만 간결하게 전달.
+   - 핵심 숫자·데이터 위주로 압축. 장황한 설명 금지!
+   - 문단 2개로 나누어 가독성 확보.
+   - "~입니다", "~합니다" 체로 작성.
+3. **마무리 (1줄):** 독자 참여 유도 질문.
+- 🔴 해시태그 절대 포함 금지! #태그 없이 본문만 작성!
 
-**스타일 규칙:**
-- 존댓말(~합니다, ~입니다) 기반. 반말/보도체 금지.
-- 이모지는 도입부에 1~2개만 사용. 과도한 이모지 금지.
-- 기사에서 나온 실제 수치·인용·팩트를 최대한 많이 포함!
-- "~라고 합니다", "~로 알려졌습니다" 등으로 출처 느낌 살려.
-- ❌ {{}}나 [[]] 같은 마크업 절대 사용 금지! 일반 텍스트로만 작성!
-- 기사에 없는 연도/숫자를 추측하지 마. 기사 원문 그대로만!
-- 반드시 500자 이상 작성할 것! 짧으면 탈락!
+**🔴🔴 반드시 지킬 규칙:**
+- 🔴 출처 표기 금지! "~에 따르면", "~보도에 의하면", "문화일보", "연합뉴스" 등 매체명·날짜·기자명 절대 언급 금지!
+  ❌ "문화일보 2026년 3월 8일 보도에 따르면..."
+  ❌ "연합뉴스 보도에 의하면..."
+  ❌ "이투데이에 따르면..."
+  ✅ "천궁-II가 96%의 명중률을 기록했습니다."
+  ✅ "요격탄 가격은 약 110만 달러로 패트리엇의 3분의 1 수준입니다."
+- 🔴 전체 300~500자! 500자 초과 금지! 인스타 캡션은 짧고 임팩트 있게!
+- 존댓말 기반. 반말/보도체 금지.
+- 이모지는 도입부에 1개만.
+- ❌ {{}}나 [[]] 같은 마크업 절대 사용 금지!
+- 기사에 없는 숫자 날조 금지.
 
 **🔴 개행 규칙 (매우 중요!):**
 - 마침표(.) 뒤에는 반드시 줄바꿈(\\n)을 넣어!
-- 한 줄에 한 문장만! 문장이 끝나면(~합니다. ~입니다. ~있습니다.) 바로 줄바꿈!
+- 한 줄에 한 문장만!
 - 문단 구분은 빈 줄(\\n\\n)로!
-- 해시태그 줄만 예외 — 해시태그는 한 줄에 모두 작성.`
+- 🔴 해시태그(#) 절대 포함 금지! 본문 텍스트만 작성!`
 }
 
 /**
@@ -402,6 +525,33 @@ export function parseSuggestTopicsResponse(content: string, category: string): T
     sourceCount: t.sourceCount || 2,
     relatedArticleIndices: t.relatedArticleIndices || []
   }))
+}
+
+/**
+ * 영상 기반 카드뉴스 생성 사용자 프롬프트
+ */
+export function buildVideoCardUserPrompt(videoInfo: {
+  title: string
+  description: string
+  uploader: string
+  duration: number
+}, userContext?: string): string {
+  const durationMin = Math.floor(videoInfo.duration / 60)
+  const durationSec = videoInfo.duration % 60
+  const durationStr = durationMin > 0 ? `${durationMin}분 ${durationSec}초` : `${durationSec}초`
+
+  let prompt = `주제: ${videoInfo.title}\n\n`
+  prompt += `[영상 정보]\n`
+  prompt += `채널: ${videoInfo.uploader}\n`
+  prompt += `길이: ${durationStr}\n`
+  if (videoInfo.description) {
+    prompt += `\n[영상 설명]\n${videoInfo.description.slice(0, 2000)}\n`
+  }
+  if (userContext) {
+    prompt += `\n[사용자 추가 정보]\n${userContext}\n`
+  }
+  prompt += `\n위 영상 정보를 바탕으로 카드뉴스 5장을 만들어줘. 영상 설명에서 핵심 정보, 숫자, 사례를 최대한 추출해서 정보 밀도 높게!`
+  return prompt
 }
 
 /**

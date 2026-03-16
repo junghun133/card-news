@@ -24,17 +24,21 @@ function getTimestamp(): string {
 }
 
 export function registerExportHandlers(): void {
-  // 단일 카드 저장 (기존 다이얼로그 방식 유지)
+  // 단일 카드 저장 (기존 다이얼로그 방식 유지, GIF 지원)
   ipcMain.handle('export:save', async (_event, dataUrl: string) => {
+    const isGif = dataUrl.startsWith('data:image/gif')
+    const ext = isGif ? 'gif' : 'png'
+    const filterName = isGif ? 'GIF Image' : 'PNG Image'
+
     const { filePath, canceled } = await dialog.showSaveDialog({
       title: '카드뉴스 이미지 저장',
-      defaultPath: `card-news-${Date.now()}.png`,
-      filters: [{ name: 'PNG Image', extensions: ['png'] }]
+      defaultPath: `card-news-${Date.now()}.${ext}`,
+      filters: [{ name: filterName, extensions: [ext] }]
     })
 
     if (canceled || !filePath) return { success: false, reason: 'canceled' }
 
-    const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '')
+    const base64Data = dataUrl.replace(/^data:image\/(png|jpeg|gif);base64,/, '')
     await writeFile(filePath, Buffer.from(base64Data, 'base64'))
     return { success: true, filePath }
   })
@@ -47,8 +51,10 @@ export function registerExportHandlers(): void {
       await mkdir(subDir, { recursive: true })
 
       for (let i = 0; i < dataUrls.length; i++) {
-        const base64Data = dataUrls[i].replace(/^data:image\/(png|jpeg);base64,/, '')
-        const filePath = join(subDir, `card-${String(i + 1).padStart(2, '0')}.png`)
+        const isGif = dataUrls[i].startsWith('data:image/gif')
+        const ext = isGif ? 'gif' : 'png'
+        const base64Data = dataUrls[i].replace(/^data:image\/(png|jpeg|gif);base64,/, '')
+        const filePath = join(subDir, `card-${String(i + 1).padStart(2, '0')}.${ext}`)
         await writeFile(filePath, Buffer.from(base64Data, 'base64'))
       }
 

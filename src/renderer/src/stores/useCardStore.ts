@@ -16,6 +16,10 @@ interface CardStore {
   cardData: CardData // 항상 slides[currentSlideIndex]와 동기화
   selectedLayout: LayoutType
 
+  // 글로벌 폰트 크기 (persist, 새 카드 생성 시에도 적용)
+  globalKeywordFontSize: number
+  globalDescriptionFontSize: number
+
   // 액션
   setCategory: (cat: Category | 'all') => void
   setTopics: (topics: TopicSuggestion[]) => void
@@ -27,6 +31,7 @@ interface CardStore {
   addSlide: () => void
   removeSlide: (index: number) => void
   setLayout: (layout: LayoutType) => void
+  setGlobalFontSize: (keywordFontSize: number, descriptionFontSize: number) => void
   resetCard: () => void
 }
 
@@ -40,6 +45,8 @@ export const useCardStore = create<CardStore>()(persist((set) => ({
   currentSlideIndex: 0,
   cardData: DUMMY_SLIDES[0],
   selectedLayout: 'image-background',
+  globalKeywordFontSize: 68,
+  globalDescriptionFontSize: 33,
 
   setCategory: (cat) => set({ selectedCategory: cat }),
   setTopics: (topics) => set({ topics }),
@@ -114,10 +121,17 @@ export const useCardStore = create<CardStore>()(persist((set) => ({
     }),
 
   setSlides: (slides) =>
-    set({
-      slides,
-      currentSlideIndex: 0,
-      cardData: slides[0]
+    set((s) => {
+      const withFont = slides.map((sl) => ({
+        ...sl,
+        keywordFontSize: sl.keywordFontSize || s.globalKeywordFontSize,
+        descriptionFontSize: sl.descriptionFontSize || s.globalDescriptionFontSize
+      }))
+      return {
+        slides: withFont,
+        currentSlideIndex: 0,
+        cardData: withFont[0]
+      }
     }),
 
   setCurrentSlide: (index) =>
@@ -135,7 +149,9 @@ export const useCardStore = create<CardStore>()(persist((set) => ({
         source: '',
         hashtags: [],
         backgroundImageUrl: s.slides[0]?.backgroundImageUrl,
-        textBlocks: []
+        textBlocks: [],
+        keywordFontSize: s.globalKeywordFontSize,
+        descriptionFontSize: s.globalDescriptionFontSize
       }
       const newSlides = [...s.slides, newSlide]
       const newIndex = newSlides.length - 1
@@ -160,13 +176,30 @@ export const useCardStore = create<CardStore>()(persist((set) => ({
 
   setLayout: (layout) => set({ selectedLayout: layout }),
 
+  setGlobalFontSize: (keywordFontSize, descriptionFontSize) =>
+    set((s) => {
+      const newSlides = s.slides.map((sl) => ({
+        ...sl,
+        keywordFontSize,
+        descriptionFontSize
+      }))
+      return {
+        globalKeywordFontSize: keywordFontSize,
+        globalDescriptionFontSize: descriptionFontSize,
+        slides: newSlides,
+        cardData: { ...s.cardData, keywordFontSize, descriptionFontSize }
+      }
+    }),
+
   resetCard: () =>
-    set({
+    set((s) => ({
       slides: DUMMY_SLIDES,
       currentSlideIndex: 0,
       cardData: DUMMY_SLIDES[0],
-      selectedLayout: 'image-background'
-    })
+      selectedLayout: 'image-background',
+      globalKeywordFontSize: s.globalKeywordFontSize,
+      globalDescriptionFontSize: s.globalDescriptionFontSize
+    }))
 }), {
   name: 'card-news-store',
   version: 1,
@@ -202,7 +235,9 @@ export const useCardStore = create<CardStore>()(persist((set) => ({
       slides: cleanSlides,
       currentSlideIndex: state.currentSlideIndex,
       cardData: cleanCardData,
-      selectedLayout: state.selectedLayout
+      selectedLayout: state.selectedLayout,
+      globalKeywordFontSize: state.globalKeywordFontSize,
+      globalDescriptionFontSize: state.globalDescriptionFontSize
     }
   }
 }))
