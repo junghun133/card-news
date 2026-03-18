@@ -234,60 +234,68 @@ export async function extractSubtitles(url: string): Promise<SubtitleEntry[] | n
 
   const outputTemplate = join(dir, 'sub')
 
-  // 시도할 언어 목록 (영어 우선, 그 외 주요 언어)
+  // 한 언어씩 순차 시도 (여러 언어 동시 요청 시 YouTube 429 에러 발생)
   const langPriority = ['en', 'ja', 'zh', 'es', 'fr', 'de', 'ko']
 
-  try {
-    console.log('[Subtitle] Extracting subtitles from:', url)
+  console.log('[Subtitle] Extracting subtitles from:', url)
+  console.log('[Subtitle] Temp dir:', dir)
 
-    // yt-dlp로 자동 자막 추출 (SRT 변환)
-    // ffmpegLocation + jsRuntimes 필수 (yt-dlp 최신 버전 요구사항)
-    await youtubedl(url, {
-      output: outputTemplate,
-      writeAutoSub: true,
-      writeSub: true,
-      subLang: langPriority.join(','),
-      skipDownload: true,
-      convertSubs: 'srt',
-      noPlaylist: true,
-      noCheckCertificates: true,
-      ffmpegLocation: dirname(ffmpegPath),
-      jsRuntimes: 'node'
-    })
+  for (const lang of langPriority) {
+    console.log(`[Subtitle] Trying language: ${lang}`)
 
-    // 생성된 SRT 파일 찾기
-    const files = readdirSync(dir).filter(f => f.endsWith('.srt'))
-    console.log('[Subtitle] Found SRT files:', files)
+    try {
+      await youtubedl(url, {
+        output: outputTemplate,
+        writeAutoSub: true,
+        writeSub: true,
+        subLang: lang,
+        skipDownload: true,
+        convertSubs: 'srt',
+        noPlaylist: true,
+        noCheckCertificates: true,
+        ffmpegLocation: dirname(ffmpegPath),
+        jsRuntimes: 'node'
+      })
 
-    if (files.length === 0) {
-      console.log('[Subtitle] No subtitles found')
-      return null
-    }
+      // 생성된 SRT 파일 찾기
+      const files = readdirSync(dir).filter(f => f.endsWith('.srt'))
+      console.log(`[Subtitle] [${lang}] Found files:`, files)
 
-    // 언어 우선순위대로 파일 선택
-    let selectedFile = files[0]
-    for (const lang of langPriority) {
-      const match = files.find(f => f.includes(`.${lang}.`) || f.includes(`.${lang}-`))
-      if (match) {
-        selectedFile = match
-        break
+      if (files.length === 0) {
+        console.log(`[Subtitle] [${lang}] No SRT files generated, trying next language`)
+        continue
       }
+
+      const selectedFile = files[0]
+      console.log(`[Subtitle] Using: ${selectedFile}`)
+
+      const srtContent = await readFile(join(dir, selectedFile), 'utf-8')
+      console.log(`[Subtitle] SRT content length: ${srtContent.length} chars`)
+      console.log(`[Subtitle] SRT preview: ${srtContent.slice(0, 300)}`)
+
+      const entries = parseSrt(srtContent)
+      console.log(`[Subtitle] Parsed ${entries.length} entries`)
+
+      if (entries.length > 0) {
+        // 임시 파일 정리
+        for (const f of files) {
+          try { await unlink(join(dir, f)) } catch { /* ignore */ }
+        }
+        return entries
+      }
+
+      console.log(`[Subtitle] [${lang}] 0 entries after parsing, trying next language`)
+      // 파일 정리 후 다음 언어 시도
+      for (const f of files) {
+        try { await unlink(join(dir, f)) } catch { /* ignore */ }
+      }
+    } catch (err: any) {
+      console.warn(`[Subtitle] [${lang}] Failed: ${err.message?.slice(0, 200)}`)
+      // 이 언어 실패해도 다음 언어 시도
+      continue
     }
-
-    console.log('[Subtitle] Using:', selectedFile)
-    const srtContent = await readFile(join(dir, selectedFile), 'utf-8')
-    const entries = parseSrt(srtContent)
-
-    console.log(`[Subtitle] Parsed ${entries.length} entries`)
-
-    // 임시 파일 정리
-    for (const f of files) {
-      try { await unlink(join(dir, f)) } catch { /* ignore */ }
-    }
-
-    return entries.length > 0 ? entries : null
-  } catch (err: any) {
-    console.error('[Subtitle] Extraction failed:', err.message)
-    return null
   }
+
+  console.log('[Subtitle] All languages exhausted, no subtitles found')
+  return null
 }
