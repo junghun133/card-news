@@ -17,6 +17,7 @@ interface OverlaySettings {
   text: string
   position: { x: number; y: number } // 0~1 비율 (좌상단 기준)
   duration: number                    // 노출 시간 (초)
+  fontSize: number                    // 폰트 크기 (px, 1080x1920 기준)
   frameDataUrl: string                // 트림 시작 프레임 캡처
 }
 
@@ -101,6 +102,7 @@ const DEFAULT_OVERLAY: OverlaySettings = {
   text: '',
   position: { x: 0.5, y: 0.35 },
   duration: 2.5,
+  fontSize: 50,
   frameDataUrl: ''
 }
 

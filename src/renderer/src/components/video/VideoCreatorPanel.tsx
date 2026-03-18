@@ -436,10 +436,8 @@ export default function VideoCreatorPanel() {
     const ctx = canvas.getContext('2d')!
     ctx.clearRect(0, 0, W, H)
 
-    const { text, position } = overlaySettings
+    const { text, position, fontSize } = overlaySettings
     if (!text.trim()) return canvas.toDataURL('image/png')
-
-    const fontSize = 50
     const lineHeight = fontSize * 1.4
     const padX = 40, padY = 20, radius = 16
 
@@ -1371,16 +1369,20 @@ export default function VideoCreatorPanel() {
                           <div
                             data-overlay-box
                             onMouseDown={handleOverlayMouseDown}
-                            className="absolute cursor-grab active:cursor-grabbing select-none rounded-xl bg-white/95 px-4 py-2 shadow-lg"
+                            className="absolute cursor-grab active:cursor-grabbing select-none rounded-xl bg-white/95 shadow-lg"
                             style={{
                               left: `${overlaySettings.position.x * 100}%`,
                               top: `${overlaySettings.position.y * 100}%`,
                               transform: 'translate(-50%, -50%)',
-                              maxWidth: '85%'
+                              maxWidth: '85%',
+                              padding: `${Math.round(overlaySettings.fontSize * 0.12)}px ${Math.round(overlaySettings.fontSize * 0.25)}px`
                             }}
                           >
                             {overlaySettings.text.split('\n').map((line, i) => (
-                              <p key={i} className="text-center text-sm font-bold text-gray-900 leading-snug whitespace-nowrap">
+                              <p key={i} className="text-center font-bold text-gray-900 whitespace-nowrap" style={{
+                                fontSize: `${Math.max(10, Math.round(overlaySettings.fontSize * 0.3))}px`,
+                                lineHeight: 1.4
+                              }}>
                                 {line}
                               </p>
                             ))}
@@ -1395,6 +1397,22 @@ export default function VideoCreatorPanel() {
                       >
                         {capturingFrame ? '캡처 중...' : '📸 프레임 다시 캡처'}
                       </button>
+                    </div>
+
+                    {/* 폰트 크기 */}
+                    <div className="mb-4">
+                      <label className="mb-1 block text-sm font-medium text-text-dark dark:text-gray-200">
+                        폰트 크기: {overlaySettings.fontSize}px
+                      </label>
+                      <input
+                        type="range" min={24} max={80} step={2}
+                        value={overlaySettings.fontSize}
+                        onChange={(e) => setOverlaySettings((p) => ({ ...p, fontSize: Number(e.target.value) }))}
+                        className="w-full accent-blue-accent"
+                      />
+                      <div className="flex justify-between text-xs text-text-light dark:text-gray-500">
+                        <span>24px</span><span>80px</span>
+                      </div>
                     </div>
 
                     {/* 노출 시간 */}
