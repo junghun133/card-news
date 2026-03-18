@@ -54,7 +54,7 @@ export async function downloadVideo(
     ffmpegLocation: dirname(ffmpegPath),
     noPlaylist: true,
     noCheckCertificates: true,
-    jsRuntimes: 'nodejs'
+    jsRuntimes: 'node'
   })
 
   // 파일 존재 확인 (yt-dlp가 확장자를 변경할 수 있으므로 디렉토리 검색)
@@ -103,7 +103,7 @@ export async function getVideoInfo(url: string): Promise<{
         noDownload: true,
         noPlaylist: true,
         noCheckCertificates: true,
-        jsRuntimes: 'nodejs'
+        jsRuntimes: 'node'
       }),
       timeout
     ])
@@ -252,7 +252,7 @@ export async function extractSubtitles(url: string): Promise<SubtitleEntry[] | n
       noPlaylist: true,
       noCheckCertificates: true,
       ffmpegLocation: dirname(ffmpegPath),
-      jsRuntimes: 'nodejs'
+      jsRuntimes: 'node'
     })
 
     // 생성된 SRT 파일 찾기
