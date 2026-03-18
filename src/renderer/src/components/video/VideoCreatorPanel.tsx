@@ -440,8 +440,8 @@ export default function VideoCreatorPanel() {
     if (!text.trim()) return canvas.toDataURL('image/png')
 
     const fontSize = 48
-    const lineHeight = fontSize * 1.5
-    const padX = 40, padY = 24, radius = 16
+    const lineHeight = fontSize * 1.4
+    const padX = 40, padY = 20, radius = 16
 
     ctx.font = `700 ${fontSize}px 'Pretendard', 'Noto Sans KR', sans-serif`
 
@@ -449,7 +449,9 @@ export default function VideoCreatorPanel() {
     const lines = text.split('\n')
     const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width))
     const boxW = maxLineWidth + padX * 2
-    const boxH = lines.length * lineHeight + padY * 2
+    // 높이: 첫줄~마지막줄 간격 + 글자 높이 + 상하 패딩
+    const textBlockH = lines.length === 1 ? fontSize : (lines.length - 1) * lineHeight + fontSize
+    const boxH = textBlockH + padY * 2
 
     // 위치 계산 (중앙 기준)
     const boxX = Math.max(0, Math.min(W - boxW, position.x * W - boxW / 2))
@@ -1378,7 +1380,7 @@ export default function VideoCreatorPanel() {
                             }}
                           >
                             {overlaySettings.text.split('\n').map((line, i) => (
-                              <p key={i} className="text-center text-sm font-bold text-gray-900 leading-relaxed whitespace-nowrap">
+                              <p key={i} className="text-center text-sm font-bold text-gray-900 leading-snug whitespace-nowrap">
                                 {line}
                               </p>
                             ))}
