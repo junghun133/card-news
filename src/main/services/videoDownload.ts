@@ -53,7 +53,8 @@ export async function downloadVideo(
     mergeOutputFormat: 'mp4',
     ffmpegLocation: dirname(ffmpegPath),
     noPlaylist: true,
-    noCheckCertificates: true
+    noCheckCertificates: true,
+    jsRuntimes: 'nodejs'
   })
 
   // 파일 존재 확인 (yt-dlp가 확장자를 변경할 수 있으므로 디렉토리 검색)
@@ -101,7 +102,8 @@ export async function getVideoInfo(url: string): Promise<{
         dumpSingleJson: true,
         noDownload: true,
         noPlaylist: true,
-        noCheckCertificates: true
+        noCheckCertificates: true,
+        jsRuntimes: 'nodejs'
       }),
       timeout
     ])
@@ -239,6 +241,7 @@ export async function extractSubtitles(url: string): Promise<SubtitleEntry[] | n
     console.log('[Subtitle] Extracting subtitles from:', url)
 
     // yt-dlp로 자동 자막 추출 (SRT 변환)
+    // ffmpegLocation + jsRuntimes 필수 (yt-dlp 최신 버전 요구사항)
     await youtubedl(url, {
       output: outputTemplate,
       writeAutoSub: true,
@@ -247,7 +250,9 @@ export async function extractSubtitles(url: string): Promise<SubtitleEntry[] | n
       skipDownload: true,
       convertSubs: 'srt',
       noPlaylist: true,
-      noCheckCertificates: true
+      noCheckCertificates: true,
+      ffmpegLocation: dirname(ffmpegPath),
+      jsRuntimes: 'nodejs'
     })
 
     // 생성된 SRT 파일 찾기
