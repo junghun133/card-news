@@ -444,6 +444,198 @@ export async function composeVideoWithTextPanels(
 }
 
 /**
+ * 전체 화면 영상 + 텍스트 오버레이 (2.5초 노출 후 사라짐) — 9:16 전용
+ */
+export async function composeVideoWithOverlay(
+  options: {
+    videoPath: string
+    overlayPath: string         // 투명 PNG (1080×1920, 텍스트 박스만)
+    outputPath: string
+    videoDuration: number
+    startSec?: number
+    overlayDuration?: number    // 기본 2.5초
+    bgmPath?: string
+    removeAudio?: boolean
+    watermarkPath?: string
+  },
+  onProgress?: (percent: number) => void
+): Promise<void> {
+  const {
+    videoPath, overlayPath, outputPath, videoDuration,
+    startSec = 0, overlayDuration = 2.5,
+    bgmPath, removeAudio, watermarkPath
+  } = options
+
+  const hasAudio = await probeHasAudio(videoPath)
+  console.log(`[VideoExport] overlay source hasAudio: ${hasAudio}`)
+
+  return new Promise((resolve, reject) => {
+    const args: string[] = []
+
+    // 입력 0: 소스 영상
+    args.push('-i', videoPath)
+
+    // 입력 1: 텍스트 오버레이 PNG (투명 배경)
+    args.push('-i', overlayPath)
+
+    // 동적 입력 인덱스 관리
+    let nextInputIdx = 2
+
+    // BGM 입력
+    let bgmInputIdx = -1
+    if (bgmPath) {
+      bgmInputIdx = nextInputIdx++
+      args.push('-i', bgmPath)
+    }
+
+    // 워터마크 입력
+    let wmInputIdx = -1
+    if (watermarkPath) {
+      wmInputIdx = nextInputIdx++
+      args.push('-i', watermarkPath)
+    }
+
+    // 필터 체인 구성
+    const filters: string[] = []
+
+    // 영상: trim → 9:16 스케일/크롭
+    if (startSec > 0) {
+      filters.push(
+        `[0:v]trim=start=${startSec}:duration=${videoDuration.toFixed(2)},setpts=PTS-STARTPTS,` +
+        `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[vid]`
+      )
+    } else {
+      filters.push(
+        `[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[vid]`
+      )
+    }
+
+    // 오버레이 PNG (투명 배경) → format rgba
+    filters.push(`[1:v]format=rgba[ovl]`)
+
+    // 텍스트 오버레이: enable로 지정 시간만 표시
+    const enableExpr = `enable='between(t,0,${overlayDuration.toFixed(2)})'`
+    filters.push(`[vid][ovl]overlay=0:0:${enableExpr}[vidovl]`)
+
+    // 워터마크 오버레이 (영상 좌상단)
+    let finalVideo = 'vidovl'
+    if (watermarkPath) {
+      filters.push(`[${finalVideo}][${wmInputIdx}:v]overlay=27:20[vidwm]`)
+      finalVideo = 'vidwm'
+    }
+
+    // 최종 출력 라벨
+    if (finalVideo !== 'vout') {
+      filters.push(`[${finalVideo}]null[vout]`)
+    }
+
+    // 오디오 처리
+    if (removeAudio) {
+      // 무음
+    } else if (bgmPath) {
+      filters.push(`[${bgmInputIdx}:a]anull[aout]`)
+    } else if (hasAudio) {
+      if (startSec > 0) {
+        filters.push(
+          `[0:a]atrim=start=${startSec}:duration=${videoDuration.toFixed(2)},asetpts=PTS-STARTPTS[aout]`
+        )
+      } else {
+        filters.push(`[0:a]anull[aout]`)
+      }
+    }
+
+    args.push('-filter_complex', filters.join(';'))
+    args.push('-map', '[vout]')
+
+    if (removeAudio) {
+      args.push('-an')
+    } else if (bgmPath || hasAudio) {
+      args.push('-map', '[aout]')
+      args.push('-c:a', 'aac', '-b:a', '192k')
+      if (bgmPath) {
+        args.push('-shortest')
+      }
+    }
+
+    // 출력 설정
+    args.push(
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-r', '30',
+      '-preset', 'fast',
+      '-movflags', '+faststart',
+      '-t', videoDuration.toFixed(2),
+      '-y',
+      outputPath
+    )
+
+    console.log('[VideoExport] overlay ffmpeg args:', args.join(' '))
+
+    const proc = spawn(ffmpegPath, args)
+    let stderr = ''
+
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString()
+      stderr += text
+
+      const match = text.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/)
+      if (match && onProgress && videoDuration > 0) {
+        const secs = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3])
+        const pct = Math.min(95, Math.round((secs / videoDuration) * 100))
+        onProgress(pct)
+      }
+    })
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        onProgress?.(100)
+        resolve()
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}\n${stderr.slice(-500)}`))
+      }
+    })
+
+    proc.on('error', (err) => {
+      reject(new Error(`FFmpeg spawn error: ${err.message}`))
+    })
+  })
+}
+
+/**
+ * 영상의 특정 시간 프레임을 캡처하여 JPEG 버퍼로 반환
+ */
+export function captureFrame(videoPath: string, timeSec: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-ss', timeSec.toFixed(2),
+      '-i', videoPath,
+      '-frames:v', '1',
+      '-f', 'image2',
+      '-vcodec', 'mjpeg',
+      '-q:v', '2',
+      'pipe:1'
+    ]
+
+    const proc = spawn(ffmpegPath, args)
+    const chunks: Buffer[] = []
+
+    proc.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk))
+
+    proc.on('close', (code) => {
+      if (code === 0 && chunks.length > 0) {
+        resolve(Buffer.concat(chunks))
+      } else {
+        reject(new Error(`Frame capture failed (code ${code})`))
+      }
+    })
+
+    proc.on('error', (err) => {
+      reject(new Error(`FFmpeg spawn error: ${err.message}`))
+    })
+  })
+}
+
+/**
  * temp 디렉토리 정리
  */
 export async function cleanupTemp(dir: string): Promise<void> {

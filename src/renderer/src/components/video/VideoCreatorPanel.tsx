@@ -1,4 +1,4 @@
-import { useRef, useEffect, createRef } from 'react'
+import { useRef, useEffect, useState, useCallback, createRef } from 'react'
 import { toPng } from 'html-to-image'
 import CardCanvas, { type CardCanvasHandle } from '@/components/cards/CardCanvas'
 import TextPanelCapture from '@/components/cards/TextPanelCapture'
@@ -14,11 +14,11 @@ export default function VideoCreatorPanel() {
   const {
     isOpen, isMinimized, windowPosition,
     videoExporting, videoProgress, videoMode, videoSettings, aiGenerating,
-    videoStep, videoSlides, videoInfo, videoTrim,
+    videoStep, videoSlides, videoInfo, videoTrim, overlaySettings,
     close, toggleMinimize, setWindowPosition,
     setVideoExporting, setVideoProgress, setVideoMode, setVideoSettings,
     setAiGenerating, setVideoStep, setVideoSlides, setVideoInfo, setVideoTrim,
-    resetWizard
+    setOverlaySettings, resetWizard
   } = store
 
   const { slides, currentSlideIndex, setCurrentSlide } = useCardStore()
@@ -368,6 +368,168 @@ export default function VideoCreatorPanel() {
     }
   }
 
+  // ─── 오버레이 모드: 프레임 캡처 ───
+  const [capturingFrame, setCapturingFrame] = useState(false)
+
+  const handleCaptureFrame = async () => {
+    const { videoUrl, localVideoPath } = videoSettings
+    if (!videoUrl.trim() && !localVideoPath) return
+
+    setCapturingFrame(true)
+    try {
+      const result = await (window as any).api.captureVideoFrame({
+        videoUrl: videoUrl.trim() || undefined,
+        localVideoPath: localVideoPath || undefined,
+        timeSec: videoTrim.startSec
+      })
+      if (result.success) {
+        setOverlaySettings((p) => ({ ...p, frameDataUrl: result.dataUrl }))
+      } else {
+        addToast('프레임 캡처 실패: ' + result.error, 'error')
+      }
+    } catch (err: any) {
+      addToast('프레임 캡처 실패: ' + err.message, 'error')
+    } finally {
+      setCapturingFrame(false)
+    }
+  }
+
+  // ─── 오버레이 모드: 텍스트 박스 드래그 ───
+  const overlayPreviewRef = useRef<HTMLDivElement>(null)
+  const [draggingOverlay, setDraggingOverlay] = useState(false)
+  const dragOffset = useRef({ x: 0, y: 0 })
+
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const box = (e.target as HTMLElement).closest('[data-overlay-box]')
+    if (!box) return
+    const rect = box.getBoundingClientRect()
+    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    setDraggingOverlay(true)
+  }, [])
+
+  useEffect(() => {
+    if (!draggingOverlay) return
+    const handleMove = (e: MouseEvent) => {
+      const preview = overlayPreviewRef.current
+      if (!preview) return
+      const rect = preview.getBoundingClientRect()
+      const x = Math.max(0, Math.min(1, (e.clientX - rect.left - dragOffset.current.x) / rect.width))
+      const y = Math.max(0, Math.min(1, (e.clientY - rect.top - dragOffset.current.y) / rect.height))
+      setOverlaySettings((p) => ({ ...p, position: { x, y } }))
+    }
+    const handleUp = () => setDraggingOverlay(false)
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [draggingOverlay, setOverlaySettings])
+
+  // ─── 오버레이 모드: 오버레이 PNG 생성 ───
+  const generateOverlayPng = async (): Promise<string> => {
+    const W = 1080, H = 1920
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d')!
+    ctx.clearRect(0, 0, W, H)
+
+    const { text, position } = overlaySettings
+    if (!text.trim()) return canvas.toDataURL('image/png')
+
+    const fontSize = 48
+    const lineHeight = fontSize * 1.5
+    const padX = 40, padY = 24, radius = 16
+
+    ctx.font = `700 ${fontSize}px 'Pretendard', 'Noto Sans KR', sans-serif`
+
+    // 텍스트 줄바꿈 처리
+    const lines = text.split('\n')
+    const maxLineWidth = Math.max(...lines.map((l) => ctx.measureText(l).width))
+    const boxW = maxLineWidth + padX * 2
+    const boxH = lines.length * lineHeight + padY * 2
+
+    // 위치 계산 (중앙 기준)
+    const boxX = Math.max(0, Math.min(W - boxW, position.x * W - boxW / 2))
+    const boxY = Math.max(0, Math.min(H - boxH, position.y * H - boxH / 2))
+
+    // 흰색 둥근 사각형 배경
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+    ctx.beginPath()
+    ctx.moveTo(boxX + radius, boxY)
+    ctx.lineTo(boxX + boxW - radius, boxY)
+    ctx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + radius)
+    ctx.lineTo(boxX + boxW, boxY + boxH - radius)
+    ctx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - radius, boxY + boxH)
+    ctx.lineTo(boxX + radius, boxY + boxH)
+    ctx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - radius)
+    ctx.lineTo(boxX, boxY + radius)
+    ctx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY)
+    ctx.closePath()
+    ctx.fill()
+
+    // 검은 텍스트
+    ctx.fillStyle = '#1A1A2E'
+    ctx.font = `700 ${fontSize}px 'Pretendard', 'Noto Sans KR', sans-serif`
+    ctx.textBaseline = 'top'
+    lines.forEach((line, i) => {
+      const lw = ctx.measureText(line).width
+      const lx = boxX + (boxW - lw) / 2 // 텍스트 중앙 정렬
+      ctx.fillText(line, lx, boxY + padY + i * lineHeight)
+    })
+
+    return canvas.toDataURL('image/png')
+  }
+
+  // ─── 오버레이 모드: 영상 생성 ───
+  const handleCreateOverlayVideo = async () => {
+    if (!overlaySettings.text.trim()) {
+      addToast('오버레이 문구를 입력해주세요.', 'error')
+      return
+    }
+
+    setVideoExporting(true)
+    setVideoProgress({ step: '준비 중...', percent: 0 })
+
+    try {
+      // 오버레이 PNG 생성
+      const overlayDataUrl = await generateOverlayPng()
+
+      // 워터마크 생성
+      let watermarkDataUrl: string | undefined
+      if (videoSettings.watermark) {
+        watermarkDataUrl = await generateWatermarkDataUrl()
+      }
+
+      const videoDuration = videoTrim.endSec - videoTrim.startSec
+
+      const result = await (window as any).api.createOverlayVideo({
+        videoUrl: videoSettings.videoUrl.trim() || undefined,
+        localVideoPath: videoSettings.localVideoPath || undefined,
+        overlayDataUrl,
+        videoDuration,
+        startSec: videoTrim.startSec,
+        overlayDuration: overlaySettings.duration,
+        bgmPath: videoSettings.removeAudio ? '' : videoSettings.bgmPath,
+        removeAudio: videoSettings.removeAudio,
+        watermarkDataUrl
+      })
+
+      if (result.success) {
+        addToast('오버레이 영상이 생성되었습니다!', 'success')
+      } else {
+        addToast('영상 생성 실패: ' + result.error, 'error')
+      }
+    } catch (err: any) {
+      addToast('영상 생성 실패: ' + err.message, 'error')
+    } finally {
+      setVideoExporting(false)
+      setVideoProgress({ step: '', percent: 0 })
+    }
+  }
+
   // 최소화 상태 텍스트
   const statusText = videoExporting
     ? `${videoProgress.step || '생성 중...'} (${videoProgress.percent}%)`
@@ -409,23 +571,33 @@ export default function VideoCreatorPanel() {
             <div className="mb-5 flex rounded-lg bg-cream-dark p-1 dark:bg-gray-700">
               <button
                 onClick={() => { setVideoMode('source'); resetWizard() }}
-                className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold transition-all cursor-pointer ${
+                className={`flex-1 rounded-md px-2 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   videoMode === 'source'
                     ? 'bg-white text-text-dark shadow-sm dark:bg-gray-600 dark:text-white'
                     : 'text-text-gray dark:text-gray-400'
                 }`}
               >
-                🔗 영상 + 카드뉴스
+                🔗 영상+카드
+              </button>
+              <button
+                onClick={() => { setVideoMode('overlay'); resetWizard(); setVideoMode('overlay') }}
+                className={`flex-1 rounded-md px-2 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                  videoMode === 'overlay'
+                    ? 'bg-white text-text-dark shadow-sm dark:bg-gray-600 dark:text-white'
+                    : 'text-text-gray dark:text-gray-400'
+                }`}
+              >
+                📝 영상+자막
               </button>
               <button
                 onClick={() => setVideoMode('slideshow')}
-                className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold transition-all cursor-pointer ${
+                className={`flex-1 rounded-md px-2 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   videoMode === 'slideshow'
                     ? 'bg-white text-text-dark shadow-sm dark:bg-gray-600 dark:text-white'
                     : 'text-text-gray dark:text-gray-400'
                 }`}
               >
-                🖼️ 카드 슬라이드쇼
+                🖼️ 슬라이드쇼
               </button>
             </div>
 
@@ -835,6 +1007,356 @@ export default function VideoCreatorPanel() {
               </>
             )}
 
+            {/* ─── 오버레이 모드 (4단계 위자드) ─── */}
+            {videoMode === 'overlay' && (
+              <>
+                {/* 스텝 인디케이터 */}
+                <div className="mb-5 flex items-center justify-center gap-2">
+                  {[1, 2, 3, 4].map((step) => (
+                    <div key={step} className="flex items-center gap-2">
+                      <div
+                        className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all ${
+                          videoStep === step
+                            ? 'bg-blue-accent text-white'
+                            : videoStep > step
+                              ? 'bg-green-500 text-white'
+                              : 'bg-cream-dark text-text-light dark:bg-gray-700 dark:text-gray-500'
+                        }`}
+                      >
+                        {videoStep > step ? '✓' : step}
+                      </div>
+                      {step < 4 && (
+                        <div className={`h-0.5 w-6 ${videoStep > step ? 'bg-green-500' : 'bg-cream-dark dark:bg-gray-700'}`} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mb-4 text-center text-xs text-text-light dark:text-gray-500">
+                  {videoStep === 1 && '① 영상 선택'}
+                  {videoStep === 2 && '② 구간 선택'}
+                  {videoStep === 3 && '③ 텍스트 오버레이 편집'}
+                  {videoStep === 4 && '④ 영상 생성'}
+                </div>
+
+                {/* Step 1: 영상 소스 입력 (source와 동일) */}
+                {videoStep === 1 && (
+                  <>
+                    <div className="mb-4">
+                      <label className="mb-1 block text-sm font-medium text-text-dark dark:text-gray-200">
+                        영상 링크 (YouTube, Instagram 등)
+                      </label>
+                      <input
+                        type="text"
+                        value={videoSettings.videoUrl}
+                        onChange={(e) =>
+                          setVideoSettings((p) => ({ ...p, videoUrl: e.target.value, localVideoPath: '' }))
+                        }
+                        placeholder="https://youtube.com/watch?v=..."
+                        className="w-full rounded-lg border border-cream-dark bg-white px-3 py-2 text-sm focus:border-blue-accent focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="h-px flex-1 bg-cream-dark dark:bg-gray-600" />
+                      <span className="text-xs text-text-light dark:text-gray-500">또는</span>
+                      <div className="h-px flex-1 bg-cream-dark dark:bg-gray-600" />
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleSelectLocalVideo}
+                          className="rounded-lg border border-cream-dark px-3 py-2 text-sm text-text-gray hover:bg-cream-dark/50 cursor-pointer dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                          📁 파일 선택
+                        </button>
+                        <span className="flex-1 truncate text-sm text-text-light dark:text-gray-500">
+                          {videoSettings.localVideoPath
+                            ? videoSettings.localVideoPath.split(/[/\\]/).pop()
+                            : '선택된 파일 없음'}
+                        </span>
+                        {videoSettings.localVideoPath && (
+                          <button
+                            onClick={() => setVideoSettings((p) => ({ ...p, localVideoPath: '' }))}
+                            className="text-red-400 hover:text-red-500 cursor-pointer text-sm"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="mb-4 text-xs text-text-light dark:text-gray-500">
+                      전체 화면 영상 위에 텍스트 오버레이가 2.5초간 표시됩니다. (9:16 세로 영상)
+                    </p>
+
+                    <div className="flex justify-between">
+                      <Button variant="ghost" onClick={close}>취소</Button>
+                      <Button
+                        onClick={() => {
+                          if (!videoInfo) {
+                            setVideoInfo({ title: '오버레이 영상', duration: 60 })
+                          }
+                          setVideoTrim({ startSec: 0, endSec: videoInfo?.duration ? Math.min(videoInfo.duration, 60) : 60 })
+                          setVideoStep(2)
+                        }}
+                        disabled={!videoSettings.videoUrl.trim() && !videoSettings.localVideoPath}
+                      >
+                        다음 →
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step 2: 영상 구간 설정 */}
+                {videoStep === 2 && (() => {
+                  const dur = videoInfo ? Math.round(videoInfo.duration) : 60
+                  const trimLen = videoTrim.endSec - videoTrim.startSec
+                  const isOver60 = trimLen > 60
+                  const fmt = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
+
+                  return (
+                    <>
+                      <div className={`mb-4 rounded-lg border p-4 dark:border-gray-600 ${isOver60 ? 'border-red-400 bg-red-50 dark:bg-red-900/20' : 'border-cream-dark'}`}>
+                        <span className="mb-3 block text-xs font-bold text-blue-accent">✂️ 영상 구간 (최대 60초)</span>
+
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            <label className="mb-1 block text-xs text-text-light dark:text-gray-500">시작 지점</label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number" min={0} max={Math.max(0, dur - 1)}
+                                value={videoTrim.startSec}
+                                onChange={(e) => {
+                                  const s = Math.max(0, Math.min(Math.round(Number(e.target.value)), dur - 1))
+                                  setVideoTrim({ startSec: s, endSec: Math.max(s + 1, videoTrim.endSec) })
+                                }}
+                                className="w-20 rounded border border-cream-dark bg-white px-2 py-1.5 text-sm text-center focus:border-blue-accent focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                              />
+                              <span className="text-xs text-text-light">초 ({fmt(videoTrim.startSec)})</span>
+                            </div>
+                          </div>
+                          <div className="pt-4 text-text-light text-lg">~</div>
+                          <div className="flex-1">
+                            <label className="mb-1 block text-xs text-text-light dark:text-gray-500">끝 지점</label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number" min={videoTrim.startSec + 1} max={dur}
+                                value={videoTrim.endSec}
+                                onChange={(e) => {
+                                  const end = Math.max(videoTrim.startSec + 1, Math.min(Math.round(Number(e.target.value)), dur))
+                                  setVideoTrim({ ...videoTrim, endSec: end })
+                                }}
+                                className="w-20 rounded border border-cream-dark bg-white px-2 py-1.5 text-sm text-center focus:border-blue-accent focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                              />
+                              <span className="text-xs text-text-light">초 ({fmt(videoTrim.endSec)})</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <input type="range" min={0} max={Math.max(0, dur - 1)} value={videoTrim.startSec}
+                            onChange={(e) => {
+                              const s = Number(e.target.value)
+                              setVideoTrim({ startSec: s, endSec: Math.max(s + 1, videoTrim.endSec) })
+                            }}
+                            className="w-full accent-blue-accent"
+                          />
+                        </div>
+                        <div className="mt-1">
+                          <input type="range" min={videoTrim.startSec + 1} max={dur} value={videoTrim.endSec}
+                            onChange={(e) => setVideoTrim({ ...videoTrim, endSec: Number(e.target.value) })}
+                            className="w-full accent-orange-500"
+                          />
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between text-xs">
+                          <span className="text-text-light dark:text-gray-500">0초</span>
+                          <span className={`font-bold ${isOver60 ? 'text-red-500' : 'text-blue-accent'}`}>
+                            선택 구간: {trimLen}초 {isOver60 && '⚠️ 60초 초과!'}
+                          </span>
+                          <span className="text-text-light dark:text-gray-500">{dur}초</span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between">
+                        <Button variant="ghost" onClick={() => setVideoStep(1)}>← 이전</Button>
+                        <Button
+                          onClick={async () => {
+                            setVideoStep(3)
+                            // 프레임 캡처 자동 실행
+                            if (!overlaySettings.frameDataUrl) {
+                              await handleCaptureFrame()
+                            }
+                          }}
+                          disabled={isOver60}
+                        >
+                          다음 →
+                        </Button>
+                      </div>
+                    </>
+                  )
+                })()}
+
+                {/* Step 3: 텍스트 오버레이 편집 */}
+                {videoStep === 3 && (
+                  <>
+                    <div className="mb-4">
+                      <label className="mb-1 block text-sm font-medium text-text-dark dark:text-gray-200">
+                        오버레이 문구
+                      </label>
+                      <textarea
+                        value={overlaySettings.text}
+                        onChange={(e) => setOverlaySettings((p) => ({ ...p, text: e.target.value }))}
+                        placeholder="영상 위에 표시할 문구를 입력하세요&#10;(여러 줄 가능)"
+                        rows={3}
+                        className="w-full rounded-lg border border-cream-dark bg-white px-3 py-2 text-sm font-bold focus:border-blue-accent focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white resize-none"
+                      />
+                    </div>
+
+                    {/* 미리보기 + 드래그 */}
+                    <div className="mb-4">
+                      <label className="mb-1 block text-xs font-medium text-text-light dark:text-gray-500">
+                        텍스트 위치 (드래그로 이동)
+                      </label>
+                      <div
+                        ref={overlayPreviewRef}
+                        className="relative overflow-hidden rounded-lg border border-cream-dark dark:border-gray-600 bg-gray-900"
+                        style={{ aspectRatio: '9/16', maxHeight: 400 }}
+                      >
+                        {/* 배경: 프레임 캡처 이미지 */}
+                        {overlaySettings.frameDataUrl ? (
+                          <img
+                            src={overlaySettings.frameDataUrl}
+                            className="absolute inset-0 h-full w-full object-cover"
+                            draggable={false}
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
+                            {capturingFrame ? '프레임 캡처 중...' : '프레임 없음'}
+                          </div>
+                        )}
+
+                        {/* 드래그 가능한 텍스트 박스 */}
+                        {overlaySettings.text.trim() && (
+                          <div
+                            data-overlay-box
+                            onMouseDown={handleOverlayMouseDown}
+                            className="absolute cursor-grab active:cursor-grabbing select-none rounded-xl bg-white/95 px-4 py-2 shadow-lg"
+                            style={{
+                              left: `${overlaySettings.position.x * 100}%`,
+                              top: `${overlaySettings.position.y * 100}%`,
+                              transform: 'translate(-50%, -50%)',
+                              maxWidth: '85%'
+                            }}
+                          >
+                            {overlaySettings.text.split('\n').map((line, i) => (
+                              <p key={i} className="text-center text-sm font-bold text-gray-900 leading-relaxed whitespace-nowrap">
+                                {line}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={handleCaptureFrame}
+                        disabled={capturingFrame}
+                        className="mt-2 w-full rounded-lg border border-cream-dark px-3 py-1.5 text-xs text-text-gray hover:bg-cream-dark/50 cursor-pointer dark:border-gray-600 dark:text-gray-300 disabled:opacity-40"
+                      >
+                        {capturingFrame ? '캡처 중...' : '📸 프레임 다시 캡처'}
+                      </button>
+                    </div>
+
+                    {/* 노출 시간 */}
+                    <div className="mb-4">
+                      <label className="mb-1 block text-sm font-medium text-text-dark dark:text-gray-200">
+                        노출 시간: {overlaySettings.duration}초
+                      </label>
+                      <input
+                        type="range" min={1} max={10} step={0.5}
+                        value={overlaySettings.duration}
+                        onChange={(e) => setOverlaySettings((p) => ({ ...p, duration: Number(e.target.value) }))}
+                        className="w-full accent-blue-accent"
+                      />
+                      <div className="flex justify-between text-xs text-text-light dark:text-gray-500">
+                        <span>1초</span><span>10초</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <Button variant="ghost" onClick={() => setVideoStep(2)}>← 이전</Button>
+                      <Button onClick={() => setVideoStep(4)} disabled={!overlaySettings.text.trim()}>
+                        다음 →
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step 4: 내보내기 설정 */}
+                {videoStep === 4 && (
+                  <>
+                    <div className="mb-4 rounded-lg bg-blue-accent/5 p-4 dark:bg-blue-accent/10">
+                      <h4 className="mb-2 text-sm font-bold text-text-dark dark:text-white">📋 영상 구성</h4>
+                      <div className="space-y-1 text-sm text-text-gray dark:text-gray-400">
+                        <p>구간: <span className="font-bold text-blue-accent">{videoTrim.startSec}초 ~ {videoTrim.endSec}초 ({videoTrim.endSec - videoTrim.startSec}초)</span></p>
+                        <p>비율: <span className="font-bold">9:16 세로</span></p>
+                        <p>오버레이: <span className="font-medium text-text-dark dark:text-gray-200">"{overlaySettings.text.split('\n')[0]}"</span> ({overlaySettings.duration}초 노출)</p>
+                      </div>
+                    </div>
+
+                    {/* 워터마크 */}
+                    <div className="mb-4">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm text-text-dark dark:text-gray-200">
+                        <input type="checkbox" checked={videoSettings.watermark}
+                          onChange={(e) => setVideoSettings((p) => ({ ...p, watermark: e.target.checked }))}
+                          className="accent-blue-accent w-4 h-4 cursor-pointer"
+                        />
+                        💧 워터마크 표시
+                      </label>
+                    </div>
+
+                    {/* BGM */}
+                    <div className="mb-4">
+                      <label className="mb-1 block text-sm font-medium text-text-dark dark:text-gray-200">배경음악 (선택)</label>
+                      <div className="flex items-center gap-2">
+                        <button onClick={handleSelectBgm} disabled={videoSettings.removeAudio}
+                          className={`rounded-lg border border-cream-dark px-3 py-2 text-sm text-text-gray hover:bg-cream-dark/50 cursor-pointer dark:border-gray-600 dark:text-gray-300 ${videoSettings.removeAudio ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          🎵 파일 선택
+                        </button>
+                        <span className="flex-1 truncate text-sm text-text-light dark:text-gray-500">
+                          {videoSettings.removeAudio ? '음소거' : videoSettings.bgmPath ? videoSettings.bgmPath.split(/[/\\]/).pop() : '없음 (원본 오디오 유지)'}
+                        </span>
+                        {videoSettings.bgmPath && !videoSettings.removeAudio && (
+                          <button onClick={() => setVideoSettings((p) => ({ ...p, bgmPath: '' }))}
+                            className="text-red-400 hover:text-red-500 cursor-pointer text-sm">✕</button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 오디오 제거 */}
+                    <div className="mb-6">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm text-text-dark dark:text-gray-200">
+                        <input type="checkbox" checked={videoSettings.removeAudio}
+                          onChange={(e) => setVideoSettings((p) => ({ ...p, removeAudio: e.target.checked, bgmPath: e.target.checked ? '' : p.bgmPath }))}
+                          className="accent-blue-accent w-4 h-4 cursor-pointer"
+                        />
+                        🔇 배경음악 제거 (무음)
+                      </label>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <Button variant="ghost" onClick={() => setVideoStep(3)}>← 이전</Button>
+                      <Button onClick={handleCreateOverlayVideo}>
+                        🎬 영상 생성
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
             {/* ─── 슬라이드쇼 모드 ─── */}
             {videoMode === 'slideshow' && (
               <>
@@ -975,8 +1497,8 @@ export default function VideoCreatorPanel() {
         </div>
       )}
 
-      {/* 텍스트 패널 캡처용 오프스크린 렌더링 */}
-      {isOpen && videoStep === 3 && videoSlides.length > 0 && (
+      {/* 텍스트 패널 캡처용 오프스크린 렌더링 (source 모드만) */}
+      {isOpen && videoMode === 'source' && videoStep === 3 && videoSlides.length > 0 && (
         <div style={{ position: 'fixed', left: -9999, top: 0, pointerEvents: 'none' }}>
           {videoSlides.map((slide, i) => (
             <TextPanelCapture

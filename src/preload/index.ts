@@ -32,6 +32,8 @@ const api = {
   exportVideoFromSource: (options: any) => ipcRenderer.invoke('export:video-from-source', options),
   generateCardsFromVideo: (options: any) => ipcRenderer.invoke('video:generate-cards', options),
   createCompositeVideo: (options: any) => ipcRenderer.invoke('video:create-composite', options),
+  captureVideoFrame: (options: any) => ipcRenderer.invoke('video:capture-frame', options),
+  createOverlayVideo: (options: any) => ipcRenderer.invoke('video:create-overlay', options),
   selectBgm: () => ipcRenderer.invoke('export:select-bgm'),
   selectVideo: () => ipcRenderer.invoke('export:select-video'),
   onVideoProgress: (callback: (step: string, percent: number) => void) => {

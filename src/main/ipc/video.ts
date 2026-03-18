@@ -1,7 +1,7 @@
 import { ipcMain, dialog, shell, app } from 'electron'
 import { join, dirname } from 'path'
 import { mkdir } from 'fs/promises'
-import { saveFramesToTemp, encodeVideo, processVideoSource, composeVideoWithTextPanels, cleanupTemp } from '../services/videoExport'
+import { saveFramesToTemp, encodeVideo, processVideoSource, composeVideoWithTextPanels, composeVideoWithOverlay, captureFrame, cleanupTemp } from '../services/videoExport'
 import { downloadVideo, getVideoInfo } from '../services/videoDownload'
 import { generateCardDataFromVideo, generateCaption } from '../services/llm'
 
@@ -329,6 +329,121 @@ export function registerVideoHandlers(): void {
       }
     } catch (err: any) {
       console.error('[Video] Card generation error:', err)
+      sendProgress('', 0)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * 영상 프레임 캡처 (특정 시간의 프레임 → data URL)
+   */
+  ipcMain.handle('video:capture-frame', async (_event, options: {
+    videoUrl?: string
+    localVideoPath?: string
+    timeSec: number
+  }) => {
+    try {
+      let videoPath = options.localVideoPath || ''
+
+      // URL인 경우 다운로드
+      if (!videoPath && options.videoUrl) {
+        const downloaded = await downloadVideo(options.videoUrl)
+        videoPath = downloaded.filePath
+      }
+
+      if (!videoPath) {
+        return { success: false, error: '영상 경로가 없습니다.' }
+      }
+
+      const buffer = await captureFrame(videoPath, options.timeSec)
+      const dataUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`
+
+      return { success: true, dataUrl }
+    } catch (err: any) {
+      console.error('[Video] Frame capture error:', err)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * 전체 영상 + 텍스트 오버레이 합성 (9:16)
+   */
+  ipcMain.handle('video:create-overlay', async (event, options: {
+    videoUrl?: string
+    localVideoPath?: string
+    overlayDataUrl: string
+    videoDuration: number
+    startSec?: number
+    overlayDuration?: number
+    bgmPath?: string
+    removeAudio?: boolean
+    watermarkDataUrl?: string
+  }) => {
+    const sender = event.sender
+    const sendProgress = (step: string, percent: number) => {
+      try { sender.send('export:video-progress', step, percent) } catch { /* destroyed */ }
+    }
+
+    try {
+      sendProgress('영상 준비 중...', 5)
+
+      // 영상 소스 확보
+      let videoPath = options.localVideoPath || ''
+      if (!videoPath && options.videoUrl) {
+        sendProgress('영상 다운로드 중...', 10)
+        const downloaded = await downloadVideo(options.videoUrl, (pct) => {
+          sendProgress('영상 다운로드 중...', 10 + Math.round(pct * 0.25))
+        })
+        videoPath = downloaded.filePath
+      }
+
+      if (!videoPath) {
+        return { success: false, error: '영상 소스가 없습니다.' }
+      }
+
+      // 오버레이 PNG 저장
+      sendProgress('오버레이 준비 중...', 35)
+      const overlayTemp = await saveFramesToTemp([options.overlayDataUrl])
+      const overlayPath = overlayTemp.paths[0]
+
+      // 워터마크 PNG 저장
+      let watermarkPath: string | undefined
+      if (options.watermarkDataUrl) {
+        const wmTemp = await saveFramesToTemp([options.watermarkDataUrl])
+        watermarkPath = wmTemp.paths[0]
+      }
+
+      // 출력 경로
+      const dateFolder = getDateFolder()
+      const outDir = join(getOutputBase(), dateFolder, `overlay-${getTimestamp()}`)
+      await mkdir(outDir, { recursive: true })
+      const outputPath = join(outDir, 'overlay-video.mp4')
+
+      // FFmpeg 합성
+      sendProgress('영상 합성 중...', 40)
+      await composeVideoWithOverlay({
+        videoPath,
+        overlayPath,
+        outputPath,
+        videoDuration: options.videoDuration,
+        startSec: options.startSec,
+        overlayDuration: options.overlayDuration,
+        bgmPath: options.removeAudio ? undefined : options.bgmPath,
+        removeAudio: options.removeAudio,
+        watermarkPath
+      }, (pct) => {
+        sendProgress('영상 합성 중...', 40 + Math.round(pct * 0.55))
+      })
+
+      sendProgress('완료!', 100)
+
+      // 출력 폴더 열기
+      shell.openPath(outDir)
+      cleanupTemp(overlayTemp.dir)
+
+      return { success: true, outputPath }
+    } catch (err: any) {
+      console.error('[Video] Overlay creation error:', err)
       sendProgress('', 0)
       return { success: false, error: err.message }
     }
