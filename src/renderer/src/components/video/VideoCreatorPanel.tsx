@@ -439,7 +439,7 @@ export default function VideoCreatorPanel() {
     const { text, position } = overlaySettings
     if (!text.trim()) return canvas.toDataURL('image/png')
 
-    const fontSize = 48
+    const fontSize = 50
     const lineHeight = fontSize * 1.4
     const padX = 40, padY = 20, radius = 16
 
