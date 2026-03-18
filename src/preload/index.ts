@@ -34,6 +34,9 @@ const api = {
   createCompositeVideo: (options: any) => ipcRenderer.invoke('video:create-composite', options),
   captureVideoFrame: (options: any) => ipcRenderer.invoke('video:capture-frame', options),
   createOverlayVideo: (options: any) => ipcRenderer.invoke('video:create-overlay', options),
+  extractSubtitles: (options: any) => ipcRenderer.invoke('video:extract-subtitles', options),
+  translateSubtitles: (options: any) => ipcRenderer.invoke('video:translate-subtitles', options),
+  createSubtitleVideo: (options: any) => ipcRenderer.invoke('video:create-subtitle-video', options),
   selectBgm: () => ipcRenderer.invoke('export:select-bgm'),
   selectVideo: () => ipcRenderer.invoke('export:select-video'),
   onVideoProgress: (callback: (step: string, percent: number) => void) => {

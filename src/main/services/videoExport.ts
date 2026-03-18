@@ -636,6 +636,190 @@ export function captureFrame(videoPath: string, timeSec: number): Promise<Buffer
 }
 
 /**
+ * SubtitleEntry 배열 → ASS 자막 파일 텍스트 생성
+ * 유튜브 하단 중앙 스타일: 흰색 글씨 + 검은 외곽선 + 반투명 배경
+ */
+export function generateAssContent(
+  entries: { startSec: number; endSec: number; text: string }[],
+  trimStartSec = 0,
+  trimEndSec = Infinity
+): string {
+  // ASS 타임코드 형식: H:MM:SS.CC
+  const toAss = (sec: number): string => {
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    const s = sec % 60
+    return `${h}:${String(m).padStart(2, '0')}:${s.toFixed(2).padStart(5, '0')}`
+  }
+
+  const header = `[Script Info]
+Title: Card News Subtitles
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Pretendard,46,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,40,40,80,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
+
+  const events = entries
+    .filter(e => {
+      // 트림 범위 내 자막만 포함
+      const adjustedStart = e.startSec - trimStartSec
+      const adjustedEnd = e.endSec - trimStartSec
+      const trimDuration = trimEndSec - trimStartSec
+      return adjustedEnd > 0 && adjustedStart < trimDuration
+    })
+    .map(e => {
+      const start = Math.max(0, e.startSec - trimStartSec)
+      const end = Math.min(trimEndSec - trimStartSec, e.endSec - trimStartSec)
+      // ASS에서 줄바꿈은 \N
+      const text = e.text.replace(/\n/g, '\\N')
+      return `Dialogue: 0,${toAss(start)},${toAss(end)},Default,,0,0,0,,${text}`
+    })
+    .join('\n')
+
+  return `${header}\n${events}\n`
+}
+
+/**
+ * 전체 화면 영상 + ASS 자막 번인 — 9:16 전용
+ */
+export async function composeVideoWithSubtitles(
+  options: {
+    videoPath: string
+    assPath: string
+    outputPath: string
+    videoDuration: number
+    startSec?: number
+    bgmPath?: string
+    removeAudio?: boolean
+    watermarkPath?: string
+  },
+  onProgress?: (percent: number) => void
+): Promise<void> {
+  const {
+    videoPath, assPath, outputPath, videoDuration,
+    startSec = 0, bgmPath, removeAudio, watermarkPath
+  } = options
+
+  const hasAudio = await probeHasAudio(videoPath)
+
+  return new Promise((resolve, reject) => {
+    const args: string[] = []
+
+    // 입력 0: 소스 영상
+    args.push('-i', videoPath)
+
+    // 동적 입력 인덱스
+    let nextInputIdx = 1
+
+    // BGM 입력
+    let bgmInputIdx = -1
+    if (bgmPath) {
+      bgmInputIdx = nextInputIdx++
+      args.push('-i', bgmPath)
+    }
+
+    // 워터마크 입력
+    let wmInputIdx = -1
+    if (watermarkPath) {
+      wmInputIdx = nextInputIdx++
+      args.push('-i', watermarkPath)
+    }
+
+    // 필터 체인
+    const filters: string[] = []
+
+    // 영상: trim → 9:16 스케일/크롭 → ASS 자막 번인
+    // ASS 필터는 파일 경로에 특수문자 이스케이프 필요
+    const escapedAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:')
+
+    if (startSec > 0) {
+      filters.push(
+        `[0:v]trim=start=${startSec}:duration=${videoDuration.toFixed(2)},setpts=PTS-STARTPTS,` +
+        `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,` +
+        `ass='${escapedAssPath}'[vid]`
+      )
+    } else {
+      filters.push(
+        `[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,` +
+        `ass='${escapedAssPath}'[vid]`
+      )
+    }
+
+    // 워터마크 오버레이
+    let finalVideo = 'vid'
+    if (watermarkPath) {
+      filters.push(`[${finalVideo}][${wmInputIdx}:v]overlay=27:20[vidwm]`)
+      finalVideo = 'vidwm'
+    }
+
+    if (finalVideo !== 'vout') {
+      filters.push(`[${finalVideo}]null[vout]`)
+    }
+
+    // 오디오
+    if (removeAudio) {
+      // 무음
+    } else if (bgmPath) {
+      filters.push(`[${bgmInputIdx}:a]anull[aout]`)
+    } else if (hasAudio) {
+      if (startSec > 0) {
+        filters.push(
+          `[0:a]atrim=start=${startSec}:duration=${videoDuration.toFixed(2)},asetpts=PTS-STARTPTS[aout]`
+        )
+      } else {
+        filters.push(`[0:a]anull[aout]`)
+      }
+    }
+
+    args.push('-filter_complex', filters.join(';'))
+    args.push('-map', '[vout]')
+
+    if (removeAudio) {
+      args.push('-an')
+    } else if (bgmPath || hasAudio) {
+      args.push('-map', '[aout]')
+      args.push('-c:a', 'aac', '-b:a', '192k')
+      if (bgmPath) args.push('-shortest')
+    }
+
+    args.push(
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+      '-preset', 'fast', '-movflags', '+faststart',
+      '-t', videoDuration.toFixed(2), '-y', outputPath
+    )
+
+    console.log('[VideoExport] subtitle ffmpeg args:', args.join(' '))
+
+    const proc = spawn(ffmpegPath, args)
+    let stderr = ''
+
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString()
+      stderr += text
+      const match = text.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/)
+      if (match && onProgress && videoDuration > 0) {
+        const secs = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3])
+        onProgress(Math.min(95, Math.round((secs / videoDuration) * 100)))
+      }
+    })
+
+    proc.on('close', (code) => {
+      if (code === 0) { onProgress?.(100); resolve() }
+      else reject(new Error(`FFmpeg exited with code ${code}\n${stderr.slice(-500)}`))
+    })
+
+    proc.on('error', (err) => reject(new Error(`FFmpeg spawn error: ${err.message}`)))
+  })
+}
+
+/**
  * temp 디렉토리 정리
  */
 export async function cleanupTemp(dir: string): Promise<void> {

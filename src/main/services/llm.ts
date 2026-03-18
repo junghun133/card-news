@@ -62,3 +62,10 @@ export async function generateCaption(
 ): Promise<string> {
   return getModule().generateCaption(cardData, articles)
 }
+
+export async function translateSubtitles(
+  entries: { index: number; startTime: string; endTime: string; text: string }[]
+): Promise<{ index: number; text: string }[]> {
+  // 번역은 Gemini만 지원 (OpenAI에도 추가 가능하나 현재 Gemini 전용)
+  return gemini.translateSubtitles(entries)
+}

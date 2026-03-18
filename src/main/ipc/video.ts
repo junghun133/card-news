@@ -1,8 +1,10 @@
 import { ipcMain, dialog, shell, app } from 'electron'
 import { join, dirname } from 'path'
 import { mkdir } from 'fs/promises'
-import { saveFramesToTemp, encodeVideo, processVideoSource, composeVideoWithTextPanels, composeVideoWithOverlay, captureFrame, cleanupTemp } from '../services/videoExport'
-import { downloadVideo, getVideoInfo } from '../services/videoDownload'
+import { saveFramesToTemp, encodeVideo, processVideoSource, composeVideoWithTextPanels, composeVideoWithOverlay, composeVideoWithSubtitles, generateAssContent, captureFrame, cleanupTemp } from '../services/videoExport'
+import { downloadVideo, getVideoInfo, extractSubtitles } from '../services/videoDownload'
+import { translateSubtitles } from '../services/llm'
+import { writeFile } from 'fs/promises'
 import { generateCardDataFromVideo, generateCaption } from '../services/llm'
 
 /** 동적 출력 경로 (Documents/card-news-output) */
@@ -444,6 +446,126 @@ export function registerVideoHandlers(): void {
       return { success: true, outputPath }
     } catch (err: any) {
       console.error('[Video] Overlay creation error:', err)
+      sendProgress('', 0)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * YouTube 영상에서 자막 추출
+   */
+  ipcMain.handle('video:extract-subtitles', async (_event, options: { videoUrl: string }) => {
+    try {
+      console.log('[Video] Extracting subtitles from:', options.videoUrl)
+      const entries = await extractSubtitles(options.videoUrl)
+      if (!entries || entries.length === 0) {
+        return { success: false, error: '이 영상에는 자막이 없습니다.' }
+      }
+      return { success: true, entries }
+    } catch (err: any) {
+      console.error('[Video] Subtitle extraction error:', err)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * 자막을 한국어로 번역 (Gemini)
+   */
+  ipcMain.handle('video:translate-subtitles', async (_event, options: {
+    entries: { index: number; startTime: string; endTime: string; text: string }[]
+  }) => {
+    try {
+      console.log(`[Video] Translating ${options.entries.length} subtitle entries`)
+      const translated = await translateSubtitles(options.entries)
+      return { success: true, translated }
+    } catch (err: any) {
+      console.error('[Video] Subtitle translation error:', err)
+      return { success: false, error: err.message }
+    }
+  })
+
+  /**
+   * 전체 영상 + ASS 자막 번인 (9:16)
+   */
+  ipcMain.handle('video:create-subtitle-video', async (event, options: {
+    videoUrl?: string
+    localVideoPath?: string
+    subtitles: { startSec: number; endSec: number; text: string }[]
+    videoDuration: number
+    startSec?: number
+    bgmPath?: string
+    removeAudio?: boolean
+    watermarkDataUrl?: string
+  }) => {
+    const sender = event.sender
+    const sendProgress = (step: string, percent: number) => {
+      try { sender.send('export:video-progress', step, percent) } catch { /* destroyed */ }
+    }
+
+    try {
+      sendProgress('영상 준비 중...', 5)
+
+      // 영상 소스 확보
+      let videoPath = options.localVideoPath || ''
+      if (!videoPath && options.videoUrl) {
+        sendProgress('영상 다운로드 중...', 10)
+        const downloaded = await downloadVideo(options.videoUrl, (pct) => {
+          sendProgress('영상 다운로드 중...', 10 + Math.round(pct * 0.25))
+        })
+        videoPath = downloaded.filePath
+      }
+
+      if (!videoPath) {
+        return { success: false, error: '영상 소스가 없습니다.' }
+      }
+
+      // ASS 자막 파일 생성
+      sendProgress('자막 파일 생성 중...', 35)
+      const assContent = generateAssContent(
+        options.subtitles,
+        options.startSec || 0,
+        (options.startSec || 0) + options.videoDuration
+      )
+      const assTemp = join(getOutputBase(), `temp-sub-${Date.now()}.ass`)
+      await writeFile(assTemp, assContent, 'utf-8')
+
+      // 워터마크 PNG 저장
+      let watermarkPath: string | undefined
+      if (options.watermarkDataUrl) {
+        const wmTemp = await saveFramesToTemp([options.watermarkDataUrl])
+        watermarkPath = wmTemp.paths[0]
+      }
+
+      // 출력 경로
+      const dateFolder = getDateFolder()
+      const outDir = join(getOutputBase(), dateFolder, `subtitle-${getTimestamp()}`)
+      await mkdir(outDir, { recursive: true })
+      const outputPath = join(outDir, 'subtitle-video.mp4')
+
+      // FFmpeg 합성
+      sendProgress('자막 영상 합성 중...', 40)
+      await composeVideoWithSubtitles({
+        videoPath,
+        assPath: assTemp,
+        outputPath,
+        videoDuration: options.videoDuration,
+        startSec: options.startSec,
+        bgmPath: options.removeAudio ? undefined : options.bgmPath,
+        removeAudio: options.removeAudio,
+        watermarkPath
+      }, (pct) => {
+        sendProgress('자막 영상 합성 중...', 40 + Math.round(pct * 0.55))
+      })
+
+      sendProgress('완료!', 100)
+      shell.openPath(outDir)
+
+      // 임시 ASS 파일 정리
+      try { await writeFile(assTemp, '') } catch { /* ignore */ }
+
+      return { success: true, outputPath }
+    } catch (err: any) {
+      console.error('[Video] Subtitle video creation error:', err)
       sendProgress('', 0)
       return { success: false, error: err.message }
     }

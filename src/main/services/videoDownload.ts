@@ -1,6 +1,7 @@
 import { join, dirname } from 'path'
 import { tmpdir } from 'os'
-import { mkdir, stat, readdir } from 'fs/promises'
+import { mkdir, stat, readdir, readFile, unlink } from 'fs/promises'
+import { readdirSync } from 'fs'
 import { app } from 'electron'
 
 // youtube-dl-exec는 externalized dependency
@@ -142,5 +143,146 @@ export function isSupportedVideoUrl(url: string): boolean {
     )
   } catch {
     return false
+  }
+}
+
+// ─── 자막 추출 ───
+
+export interface SubtitleEntry {
+  index: number
+  startTime: string   // "00:00:01,000"
+  endTime: string     // "00:00:03,500"
+  startSec: number
+  endSec: number
+  text: string
+}
+
+/**
+ * SRT 타임코드("00:01:23,456")를 초 단위로 변환
+ */
+function srtTimeToSec(time: string): number {
+  const [hms, ms] = time.split(',')
+  const [h, m, s] = hms.split(':').map(Number)
+  return h * 3600 + m * 60 + s + (parseInt(ms || '0') / 1000)
+}
+
+/**
+ * SRT 문자열을 SubtitleEntry 배열로 파싱
+ * YouTube 자동 자막의 중복/빈 라인 자동 정리
+ */
+export function parseSrt(srtContent: string): SubtitleEntry[] {
+  const entries: SubtitleEntry[] = []
+  // BOM 제거 + 정규화
+  const cleaned = srtContent.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').trim()
+  const blocks = cleaned.split(/\n\n+/)
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n')
+    if (lines.length < 3) continue
+
+    // 첫 줄: 인덱스 (숫자)
+    const idx = parseInt(lines[0])
+    if (isNaN(idx)) continue
+
+    // 둘째 줄: 타임코드
+    const timeMatch = lines[1].match(/(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/)
+    if (!timeMatch) continue
+
+    // 나머지 줄: 텍스트
+    const text = lines.slice(2).join('\n').trim()
+    if (!text) continue
+
+    const startTime = timeMatch[1]
+    const endTime = timeMatch[2]
+
+    entries.push({
+      index: idx,
+      startTime,
+      endTime,
+      startSec: srtTimeToSec(startTime),
+      endSec: srtTimeToSec(endTime),
+      text
+    })
+  }
+
+  // YouTube 자동 자막: 연속 중복 텍스트 제거
+  const deduped: SubtitleEntry[] = []
+  for (const entry of entries) {
+    const prev = deduped[deduped.length - 1]
+    if (prev && prev.text === entry.text) {
+      // 같은 텍스트면 endTime만 확장
+      prev.endTime = entry.endTime
+      prev.endSec = entry.endSec
+    } else {
+      deduped.push({ ...entry, index: deduped.length + 1 })
+    }
+  }
+
+  return deduped
+}
+
+/**
+ * YouTube 영상에서 자막 추출 (자동 자막 포함)
+ * @returns 자막 배열 또는 null (자막 없음)
+ */
+export async function extractSubtitles(url: string): Promise<SubtitleEntry[] | null> {
+  const baseDir = getSafeTempDir()
+  const dir = join(baseDir, `card-news-sub-${Date.now()}`)
+  await mkdir(dir, { recursive: true })
+
+  const outputTemplate = join(dir, 'sub')
+
+  // 시도할 언어 목록 (영어 우선, 그 외 주요 언어)
+  const langPriority = ['en', 'ja', 'zh', 'es', 'fr', 'de', 'ko']
+
+  try {
+    console.log('[Subtitle] Extracting subtitles from:', url)
+
+    // yt-dlp로 자동 자막 추출 (SRT 변환)
+    await youtubedl(url, {
+      output: outputTemplate,
+      writeAutoSub: true,
+      writeSub: true,
+      subLang: langPriority.join(','),
+      skipDownload: true,
+      convertSubs: 'srt',
+      noPlaylist: true,
+      noCheckCertificates: true
+    })
+
+    // 생성된 SRT 파일 찾기
+    const files = readdirSync(dir).filter(f => f.endsWith('.srt'))
+    console.log('[Subtitle] Found SRT files:', files)
+
+    if (files.length === 0) {
+      console.log('[Subtitle] No subtitles found')
+      return null
+    }
+
+    // 언어 우선순위대로 파일 선택
+    let selectedFile = files[0]
+    for (const lang of langPriority) {
+      const match = files.find(f => f.includes(`.${lang}.`) || f.includes(`.${lang}-`))
+      if (match) {
+        selectedFile = match
+        break
+      }
+    }
+
+    console.log('[Subtitle] Using:', selectedFile)
+    const srtContent = await readFile(join(dir, selectedFile), 'utf-8')
+    const entries = parseSrt(srtContent)
+
+    console.log(`[Subtitle] Parsed ${entries.length} entries`)
+
+    // 임시 파일 정리
+    for (const f of files) {
+      try { await unlink(join(dir, f)) } catch { /* ignore */ }
+    }
+
+    return entries.length > 0 ? entries : null
+  } catch (err: any) {
+    console.error('[Subtitle] Extraction failed:', err.message)
+    return null
   }
 }

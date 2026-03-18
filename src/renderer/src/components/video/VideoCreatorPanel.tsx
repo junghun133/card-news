@@ -14,11 +14,11 @@ export default function VideoCreatorPanel() {
   const {
     isOpen, isMinimized, windowPosition,
     videoExporting, videoProgress, videoMode, videoSettings, aiGenerating,
-    videoStep, videoSlides, videoInfo, videoTrim, overlaySettings,
+    videoStep, videoSlides, videoInfo, videoTrim, overlaySettings, subtitleSettings,
     close, toggleMinimize, setWindowPosition,
     setVideoExporting, setVideoProgress, setVideoMode, setVideoSettings,
     setAiGenerating, setVideoStep, setVideoSlides, setVideoInfo, setVideoTrim,
-    setOverlaySettings, resetWizard
+    setOverlaySettings, setSubtitleSettings, resetWizard
   } = store
 
   const { slides, currentSlideIndex, setCurrentSlide } = useCardStore()
@@ -530,6 +530,123 @@ export default function VideoCreatorPanel() {
     }
   }
 
+  // ─── 자막 모드: 자막 추출 + 번역 ───
+  const handleExtractAndTranslate = async () => {
+    const url = videoSettings.videoUrl.trim()
+    if (!url) return
+
+    setSubtitleSettings((p) => ({ ...p, isExtracting: true }))
+    setVideoProgress({ step: '자막 추출 중...', percent: 10 })
+
+    try {
+      // 1. 자막 추출
+      const extractResult = await (window as any).api.extractSubtitles({ videoUrl: url })
+      if (!extractResult.success) {
+        addToast(extractResult.error || '자막을 찾을 수 없습니다.', 'error')
+        setSubtitleSettings((p) => ({ ...p, isExtracting: false }))
+        setVideoProgress({ step: '', percent: 0 })
+        return
+      }
+
+      setSubtitleSettings((p) => ({
+        ...p,
+        originalEntries: extractResult.entries,
+        isExtracting: false,
+        isTranslating: true
+      }))
+      setVideoProgress({ step: '한국어 번역 중...', percent: 40 })
+
+      // 2. Gemini 번역
+      const translateResult = await (window as any).api.translateSubtitles({
+        entries: extractResult.entries
+      })
+
+      if (translateResult.success) {
+        // 번역 결과를 원본 엔트리에 매핑
+        const translated = extractResult.entries.map((entry: any) => {
+          const match = translateResult.translated.find((t: any) => t.index === entry.index)
+          return { ...entry, text: match ? match.text : entry.text }
+        })
+
+        setSubtitleSettings((p) => ({
+          ...p,
+          translatedEntries: translated,
+          isTranslating: false
+        }))
+
+        // 영상 정보도 가져오기
+        try {
+          const info = await (window as any).api.generateCardsFromVideo({ videoUrl: url })
+          if (info.success && info.videoInfo) {
+            setVideoInfo({ title: info.videoInfo.title, duration: info.videoInfo.duration })
+            setVideoTrim({ startSec: 0, endSec: Math.min(info.videoInfo.duration, 60) })
+          }
+        } catch { /* 영상 정보 실패해도 계속 */ }
+
+        setVideoProgress({ step: '', percent: 0 })
+        setVideoStep(3)
+        addToast(`${translated.length}개 자막 번역 완료!`, 'success')
+      } else {
+        addToast('번역 실패: ' + translateResult.error, 'error')
+        // 번역 실패 시 원본으로 대체
+        setSubtitleSettings((p) => ({
+          ...p,
+          translatedEntries: extractResult.entries,
+          isTranslating: false
+        }))
+        setVideoProgress({ step: '', percent: 0 })
+        setVideoStep(3)
+      }
+    } catch (err: any) {
+      addToast('자막 처리 실패: ' + err.message, 'error')
+      setSubtitleSettings((p) => ({ ...p, isExtracting: false, isTranslating: false }))
+      setVideoProgress({ step: '', percent: 0 })
+    }
+  }
+
+  // ─── 자막 모드: 영상 생성 ───
+  const handleCreateSubtitleVideo = async () => {
+    const entries = subtitleSettings.translatedEntries
+    if (entries.length === 0) {
+      addToast('번역된 자막이 없습니다.', 'error')
+      return
+    }
+
+    setVideoExporting(true)
+    setVideoProgress({ step: '준비 중...', percent: 0 })
+
+    try {
+      let watermarkDataUrl: string | undefined
+      if (videoSettings.watermark) {
+        watermarkDataUrl = await generateWatermarkDataUrl()
+      }
+
+      const videoDuration = videoTrim.endSec - videoTrim.startSec
+
+      const result = await (window as any).api.createSubtitleVideo({
+        videoUrl: videoSettings.videoUrl.trim() || undefined,
+        localVideoPath: videoSettings.localVideoPath || undefined,
+        subtitles: entries.map(e => ({ startSec: e.startSec, endSec: e.endSec, text: e.text })),
+        videoDuration,
+        startSec: videoTrim.startSec,
+        bgmPath: videoSettings.removeAudio ? '' : videoSettings.bgmPath,
+        removeAudio: videoSettings.removeAudio,
+        watermarkDataUrl
+      })
+
+      if (result.success) {
+        addToast('자막 영상이 생성되었습니다!', 'success')
+      } else {
+        addToast('영상 생성 실패: ' + result.error, 'error')
+      }
+    } catch (err: any) {
+      addToast('영상 생성 실패: ' + err.message, 'error')
+    } finally {
+      setVideoExporting(false)
+      setVideoProgress({ step: '', percent: 0 })
+    }
+  }
+
   // 최소화 상태 텍스트
   const statusText = videoExporting
     ? `${videoProgress.step || '생성 중...'} (${videoProgress.percent}%)`
@@ -588,6 +705,16 @@ export default function VideoCreatorPanel() {
                 }`}
               >
                 📝 영상+자막
+              </button>
+              <button
+                onClick={() => { setVideoMode('subtitle'); resetWizard(); setVideoMode('subtitle') }}
+                className={`flex-1 rounded-md px-2 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                  videoMode === 'subtitle'
+                    ? 'bg-white text-text-dark shadow-sm dark:bg-gray-600 dark:text-white'
+                    : 'text-text-gray dark:text-gray-400'
+                }`}
+              >
+                🌐 번역자막
               </button>
               <button
                 onClick={() => setVideoMode('slideshow')}
@@ -1350,6 +1477,258 @@ export default function VideoCreatorPanel() {
                       <Button variant="ghost" onClick={() => setVideoStep(3)}>← 이전</Button>
                       <Button onClick={handleCreateOverlayVideo}>
                         🎬 영상 생성
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ─── 번역자막 모드 (4단계 위자드) ─── */}
+            {videoMode === 'subtitle' && (
+              <>
+                {/* 스텝 인디케이터 */}
+                <div className="mb-5 flex items-center justify-center gap-2">
+                  {[1, 2, 3, 4].map((step) => (
+                    <div key={step} className="flex items-center gap-2">
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all ${
+                        videoStep === step ? 'bg-blue-accent text-white'
+                          : videoStep > step ? 'bg-green-500 text-white'
+                          : 'bg-cream-dark text-text-light dark:bg-gray-700 dark:text-gray-500'
+                      }`}>
+                        {videoStep > step ? '✓' : step}
+                      </div>
+                      {step < 4 && <div className={`h-0.5 w-6 ${videoStep > step ? 'bg-green-500' : 'bg-cream-dark dark:bg-gray-700'}`} />}
+                    </div>
+                  ))}
+                </div>
+                <div className="mb-4 text-center text-xs text-text-light dark:text-gray-500">
+                  {videoStep === 1 && '① 영상 URL 입력'}
+                  {videoStep === 2 && '② 자막 추출 + 번역'}
+                  {videoStep === 3 && '③ 자막 편집 + 구간 선택'}
+                  {videoStep === 4 && '④ 영상 생성'}
+                </div>
+
+                {/* Step 1: 영상 URL 입력 */}
+                {videoStep === 1 && (
+                  <>
+                    <div className="mb-4 rounded-lg bg-blue-accent/5 p-4 dark:bg-blue-accent/10">
+                      <p className="text-sm text-text-gray dark:text-gray-400">
+                        🌐 외국 영상의 자동 자막(영어 등)을 추출하고 한국어로 번역합니다.
+                      </p>
+                    </div>
+                    <div className="mb-4">
+                      <label className="mb-1 block text-sm font-medium text-text-dark dark:text-gray-200">
+                        YouTube 영상 링크
+                      </label>
+                      <input
+                        type="text"
+                        value={videoSettings.videoUrl}
+                        onChange={(e) => setVideoSettings((p) => ({ ...p, videoUrl: e.target.value }))}
+                        placeholder="https://youtube.com/watch?v=..."
+                        className="w-full rounded-lg border border-cream-dark bg-white px-3 py-2 text-sm focus:border-blue-accent focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div className="flex justify-between">
+                      <Button variant="ghost" onClick={close}>취소</Button>
+                      <Button
+                        onClick={() => { setVideoStep(2); handleExtractAndTranslate() }}
+                        disabled={!videoSettings.videoUrl.trim()}
+                      >
+                        자막 추출 + 번역 →
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step 2: 자막 추출 + 번역 중 (자동 진행) */}
+                {videoStep === 2 && (
+                  <div className="flex flex-col items-center gap-4 py-8">
+                    <div className="text-3xl">
+                      {subtitleSettings.isExtracting ? '📥' : subtitleSettings.isTranslating ? '🌐' : '✅'}
+                    </div>
+                    <h3 className="text-lg font-bold text-text-dark dark:text-white">
+                      {subtitleSettings.isExtracting
+                        ? '자막 추출 중...'
+                        : subtitleSettings.isTranslating
+                          ? '한국어 번역 중...'
+                          : '완료!'}
+                    </h3>
+                    <div className="w-full rounded-full bg-cream-dark dark:bg-gray-700">
+                      <div
+                        className="h-3 rounded-full bg-blue-accent transition-all duration-300"
+                        style={{ width: `${videoProgress.percent}%` }}
+                      />
+                    </div>
+                    <p className="text-sm text-text-gray dark:text-gray-400">
+                      {videoProgress.step || '준비 중...'} ({videoProgress.percent}%)
+                    </p>
+                    <Button variant="ghost" onClick={() => { setVideoStep(1); setSubtitleSettings((p) => ({ ...p, isExtracting: false, isTranslating: false })) }}>
+                      취소
+                    </Button>
+                  </div>
+                )}
+
+                {/* Step 3: 자막 편집 + 트림 */}
+                {videoStep === 3 && (
+                  <>
+                    {/* 트림 설정 */}
+                    {videoInfo && (() => {
+                      const dur = Math.round(videoInfo.duration)
+                      const trimLen = videoTrim.endSec - videoTrim.startSec
+                      const isOver60 = trimLen > 60
+                      const fmt = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
+
+                      return (
+                        <div className={`mb-4 rounded-lg border p-3 dark:border-gray-600 ${isOver60 ? 'border-red-400 bg-red-50 dark:bg-red-900/20' : 'border-cream-dark'}`}>
+                          <span className="mb-2 block text-xs font-bold text-blue-accent">✂️ 영상 구간 (최대 60초)</span>
+                          <div className="flex items-center gap-2 text-sm">
+                            <input type="number" min={0} max={Math.max(0, dur - 1)} value={videoTrim.startSec}
+                              onChange={(e) => {
+                                const s = Math.max(0, Math.min(Math.round(Number(e.target.value)), dur - 1))
+                                setVideoTrim({ startSec: s, endSec: Math.max(s + 1, videoTrim.endSec) })
+                              }}
+                              className="w-16 rounded border border-cream-dark bg-white px-2 py-1 text-center text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                            />
+                            <span className="text-text-light">~</span>
+                            <input type="number" min={videoTrim.startSec + 1} max={dur} value={videoTrim.endSec}
+                              onChange={(e) => {
+                                const end = Math.max(videoTrim.startSec + 1, Math.min(Math.round(Number(e.target.value)), dur))
+                                setVideoTrim({ ...videoTrim, endSec: end })
+                              }}
+                              className="w-16 rounded border border-cream-dark bg-white px-2 py-1 text-center text-xs dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                            />
+                            <span className={`text-xs font-bold ${isOver60 ? 'text-red-500' : 'text-blue-accent'}`}>
+                              ({fmt(videoTrim.startSec)}~{fmt(videoTrim.endSec)}, {trimLen}초)
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* 자막 편집 목록 */}
+                    <div className="mb-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-bold text-blue-accent">📝 번역 자막 편집</span>
+                        <span className="text-xs text-text-light dark:text-gray-500">
+                          {subtitleSettings.translatedEntries.filter(e =>
+                            e.startSec < videoTrim.endSec && e.endSec > videoTrim.startSec
+                          ).length}개 자막
+                        </span>
+                      </div>
+
+                      <div className="max-h-[300px] overflow-y-auto rounded-lg border border-cream-dark dark:border-gray-600">
+                        {subtitleSettings.translatedEntries
+                          .filter(e => e.startSec < videoTrim.endSec && e.endSec > videoTrim.startSec)
+                          .map((entry, i) => {
+                            const fmt = (sec: number) => {
+                              const m = Math.floor(sec / 60)
+                              const s = Math.floor(sec % 60)
+                              return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                            }
+                            return (
+                              <div key={entry.index} className={`flex items-start gap-2 px-3 py-2 ${i > 0 ? 'border-t border-cream-dark/50 dark:border-gray-700' : ''}`}>
+                                <span className="mt-1 shrink-0 text-[10px] text-text-light dark:text-gray-500 w-20">
+                                  {fmt(entry.startSec)}~{fmt(entry.endSec)}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={entry.text}
+                                  onChange={(e) => {
+                                    setSubtitleSettings((p) => ({
+                                      ...p,
+                                      translatedEntries: p.translatedEntries.map(
+                                        (en) => en.index === entry.index ? { ...en, text: e.target.value } : en
+                                      )
+                                    }))
+                                  }}
+                                  className="flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-text-dark focus:border-blue-accent focus:bg-white focus:outline-none dark:text-white dark:focus:bg-gray-700"
+                                />
+                                <button
+                                  onClick={() => {
+                                    setSubtitleSettings((p) => ({
+                                      ...p,
+                                      translatedEntries: p.translatedEntries.filter(en => en.index !== entry.index)
+                                    }))
+                                  }}
+                                  className="mt-1 shrink-0 text-xs text-red-400 hover:text-red-500 cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <Button variant="ghost" onClick={() => setVideoStep(1)}>← 이전</Button>
+                      <Button
+                        onClick={() => setVideoStep(4)}
+                        disabled={subtitleSettings.translatedEntries.length === 0 || (videoTrim.endSec - videoTrim.startSec) > 60}
+                      >
+                        다음 →
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step 4: 내보내기 설정 */}
+                {videoStep === 4 && (
+                  <>
+                    <div className="mb-4 rounded-lg bg-blue-accent/5 p-4 dark:bg-blue-accent/10">
+                      <h4 className="mb-2 text-sm font-bold text-text-dark dark:text-white">📋 영상 구성</h4>
+                      <div className="space-y-1 text-sm text-text-gray dark:text-gray-400">
+                        <p>구간: <span className="font-bold text-blue-accent">{videoTrim.startSec}초 ~ {videoTrim.endSec}초 ({videoTrim.endSec - videoTrim.startSec}초)</span></p>
+                        <p>비율: <span className="font-bold">9:16 세로</span></p>
+                        <p>자막: <span className="font-bold">{subtitleSettings.translatedEntries.filter(e =>
+                          e.startSec < videoTrim.endSec && e.endSec > videoTrim.startSec
+                        ).length}개 한국어 자막</span></p>
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm text-text-dark dark:text-gray-200">
+                        <input type="checkbox" checked={videoSettings.watermark}
+                          onChange={(e) => setVideoSettings((p) => ({ ...p, watermark: e.target.checked }))}
+                          className="accent-blue-accent w-4 h-4 cursor-pointer"
+                        />
+                        💧 워터마크 표시
+                      </label>
+                    </div>
+
+                    <div className="mb-4">
+                      <label className="mb-1 block text-sm font-medium text-text-dark dark:text-gray-200">배경음악 (선택)</label>
+                      <div className="flex items-center gap-2">
+                        <button onClick={handleSelectBgm} disabled={videoSettings.removeAudio}
+                          className={`rounded-lg border border-cream-dark px-3 py-2 text-sm text-text-gray hover:bg-cream-dark/50 cursor-pointer dark:border-gray-600 dark:text-gray-300 ${videoSettings.removeAudio ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          🎵 파일 선택
+                        </button>
+                        <span className="flex-1 truncate text-sm text-text-light dark:text-gray-500">
+                          {videoSettings.removeAudio ? '음소거' : videoSettings.bgmPath ? videoSettings.bgmPath.split(/[/\\]/).pop() : '없음 (원본 오디오 유지)'}
+                        </span>
+                        {videoSettings.bgmPath && !videoSettings.removeAudio && (
+                          <button onClick={() => setVideoSettings((p) => ({ ...p, bgmPath: '' }))}
+                            className="text-red-400 hover:text-red-500 cursor-pointer text-sm">✕</button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mb-6">
+                      <label className="flex items-center gap-2 cursor-pointer text-sm text-text-dark dark:text-gray-200">
+                        <input type="checkbox" checked={videoSettings.removeAudio}
+                          onChange={(e) => setVideoSettings((p) => ({ ...p, removeAudio: e.target.checked, bgmPath: e.target.checked ? '' : p.bgmPath }))}
+                          className="accent-blue-accent w-4 h-4 cursor-pointer"
+                        />
+                        🔇 배경음악 제거 (무음)
+                      </label>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <Button variant="ghost" onClick={() => setVideoStep(3)}>← 이전</Button>
+                      <Button onClick={handleCreateSubtitleVideo}>
+                        🎬 자막 영상 생성
                       </Button>
                     </div>
                   </>
