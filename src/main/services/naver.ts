@@ -144,9 +144,11 @@ export async function searchNaverNewsByKeyword(
     console.log(`  ${i + 1}. [${a.date || '날짜없음'}] ${a.title.slice(0, 50)}`)
   })
 
-  const recent = filterRecentArticles(articles, 30)
-  console.log(`[Naver] 키워드 검색 최종: ${recent.length}건 (30일 이내)`)
-  return recent
+  // 최근 7일 → 14일 점진적 필터링
+  const recent = filterRecentArticles(articles, 7)
+  const finalArticles = recent.length >= 5 ? recent : filterRecentArticles(articles, 14)
+  console.log(`[Naver] 키워드 검색 최종: ${finalArticles.length}건 (최신순)`)
+  return finalArticles
 }
 
 /**
@@ -179,7 +181,7 @@ export async function searchNaverNewsByTopic(
     console.log(`  ${i + 1}. [${a.date || '날짜없음'}] ${a.title.slice(0, 50)}`)
   })
 
-  const recent = filterRecentArticles(articles, 30)
-  console.log(`[Naver] 주제 추가검색 최종: ${recent.length}건 (30일 이내)`)
+  const recent = filterRecentArticles(articles, 14)
+  console.log(`[Naver] 주제 추가검색 최종: ${recent.length}건 (14일 이내)`)
   return recent
 }

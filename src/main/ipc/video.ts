@@ -31,6 +31,7 @@ export function registerVideoHandlers(): void {
     transitionType?: string
     aspectRatio?: '1:1' | '9:16'
     bgmPath?: string
+    removeAudio?: boolean
   }) => {
     const sender = event.sender
     const sendProgress = (step: string, percent: number) => {
@@ -63,7 +64,8 @@ export function registerVideoHandlers(): void {
           transitionDuration: options.transitionDuration,
           transitionType: options.transitionType,
           aspectRatio: options.aspectRatio,
-          bgmPath: options.bgmPath
+          bgmPath: options.removeAudio ? undefined : options.bgmPath,
+          removeAudio: options.removeAudio
         },
         (percent) => {
           const adjusted = 20 + Math.round(percent * 0.75)
@@ -165,6 +167,8 @@ export function registerVideoHandlers(): void {
     videoDuration: number
     startSec?: number
     bgmPath?: string
+    removeAudio?: boolean
+    watermarkDataUrl?: string
   }) => {
     const sender = event.sender
     const sendProgress = (step: string, percent: number) => {
@@ -199,6 +203,14 @@ export function registerVideoHandlers(): void {
       panelTempDir = tDir
       console.log(`[Video] ${panelPaths.length}장 텍스트 패널 저장 완료`)
 
+      // 워터마크 PNG 저장
+      let watermarkPath: string | undefined
+      if (options.watermarkDataUrl) {
+        const { paths: wmPaths } = await saveFramesToTemp([options.watermarkDataUrl])
+        watermarkPath = wmPaths[0]
+        console.log(`[Video] 워터마크 PNG 저장 완료: ${watermarkPath}`)
+      }
+
       // Step 3: 출력 경로 생성
       const dateDir = join(getOutputBase(), getDateFolder())
       const subDir = join(dateDir, `reels-${getTimestamp()}`)
@@ -214,7 +226,9 @@ export function registerVideoHandlers(): void {
           outputPath,
           videoDuration: options.videoDuration,
           startSec: options.startSec || 0,
-          bgmPath: options.bgmPath
+          bgmPath: options.removeAudio ? undefined : options.bgmPath,
+          removeAudio: options.removeAudio,
+          watermarkPath
         },
         (percent) => {
           const adjusted = 40 + Math.round(percent * 0.55)

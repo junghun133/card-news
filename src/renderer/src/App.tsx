@@ -6,8 +6,10 @@ import LoginPage from '@/pages/LoginPage'
 import ProjectsPage from '@/pages/ProjectsPage'
 import AuthGuard from '@/components/common/AuthGuard'
 import ToastContainer from '@/components/common/Toast'
+import VideoCreatorPanel from '@/components/video/VideoCreatorPanel'
 import { useThemeStore } from '@/stores/useThemeStore'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useVideoCreatorStore } from '@/stores/useVideoCreatorStore'
 
 const NAV_ITEMS = [
   { to: '/', label: '뉴스 검색', icon: '🔍' },
@@ -19,6 +21,7 @@ const NAV_ITEMS = [
 function AppLayout() {
   const { dark, toggle } = useThemeStore()
   const logout = useAuthStore((s) => s.logout)
+  const { isOpen: videoCreatorOpen, open: openVideoCreator } = useVideoCreatorStore()
 
   return (
     <div className="flex h-screen bg-cream dark:bg-gray-900">
@@ -46,6 +49,22 @@ function AppLayout() {
               {item.label}
             </NavLink>
           ))}
+
+          {/* 구분선 */}
+          <div className="my-1 border-t border-cream-dark dark:border-gray-700" />
+
+          {/* 카드 영상 만들기 (플로팅 윈도우 토글) */}
+          <button
+            onClick={openVideoCreator}
+            className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all cursor-pointer ${
+              videoCreatorOpen
+                ? 'bg-light-blue/40 text-blue-accent dark:bg-blue-accent/20'
+                : 'text-text-gray hover:bg-cream-dark/50 dark:text-gray-400 dark:hover:bg-gray-700'
+            }`}
+          >
+            <span>🎬</span>
+            카드영상만들기
+          </button>
         </div>
 
         {/* 하단: 로그아웃 + 테마 */}
@@ -92,6 +111,7 @@ export default function App() {
           element={
             <AuthGuard>
               <AppLayout />
+              <VideoCreatorPanel />
             </AuthGuard>
           }
         />

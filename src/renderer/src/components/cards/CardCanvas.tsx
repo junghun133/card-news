@@ -67,7 +67,7 @@ function WatermarkSticker({
           fontWeight: 700,
           color: '#262626',
           letterSpacing: '0.01em',
-          fontFamily: "'A2G', 'Noto Sans KR', sans-serif",
+          fontFamily: "'Pretendard', 'Noto Sans KR', sans-serif",
           whiteSpace: 'nowrap'
         }}
       >
@@ -79,9 +79,10 @@ function WatermarkSticker({
 
 const CardCanvas = forwardRef<CardCanvasHandle, Props>(({ scale = 0.45, slideIndex }, ref) => {
   const cardRef = useRef<HTMLDivElement>(null)
-  const { selectedLayout, cardData, currentSlideIndex, setCardData } = useCardStore()
+  const { selectedLayout, cardData, currentSlideIndex, setCardData, slides } = useCardStore()
 
   const effectiveIndex = slideIndex ?? currentSlideIndex
+  const isLastSlide = effectiveIndex === slides.length - 1
   const wm1Pos = cardData.watermark1Position ?? DEFAULT_WM1
 
   useImperativeHandle(ref, () => ({
@@ -152,12 +153,14 @@ const CardCanvas = forwardRef<CardCanvasHandle, Props>(({ scale = 0.45, slideInd
         >
           {renderCard()}
 
-          {/* 워터마크 스티커 */}
-          <WatermarkSticker
-            position={wm1Pos}
-            scale={scale}
-            onDragEnd={(pos) => setCardData({ watermark1Position: pos })}
-          />
+          {/* 워터마크 스티커 (마지막 슬라이드 제외) */}
+          {!isLastSlide && (
+            <WatermarkSticker
+              position={wm1Pos}
+              scale={scale}
+              onDragEnd={(pos) => setCardData({ watermark1Position: pos })}
+            />
+          )}
         </div>
       </div>
     </div>

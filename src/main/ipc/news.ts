@@ -7,16 +7,22 @@ import { searchNaverNewsByKeyword, searchNaverNewsByTopic } from '../services/na
 import { enrichArticlesWithFullText } from '../services/articleFetcher'
 
 /**
- * 카테고리 → 네이버 검색용 대표 키워드 매핑
+ * 카테고리 → 네이버 검색용 키워드 풀 (랜덤 선택)
  */
-const NAVER_CATEGORY_KEYWORDS: Record<string, string> = {
-  ai: 'AI 인공지능',
-  tech: '반도체 IT 기술',
-  stocks: '주식 코스피',
-  economy: '경제 금리 환율',
-  war: '전쟁 국제정세',
-  society: '사회 이슈',
-  science: '과학 연구'
+const NAVER_CATEGORY_KEYWORD_POOL: Record<string, string[]> = {
+  ai: ['AI 인공지능 최신', 'ChatGPT 생성AI', 'AI 논란 규제', 'AI 일자리 위기'],
+  tech: ['반도체 삼성 TSMC', 'IT 신제품 출시', '사이버 해킹 보안', '자율주행 전기차'],
+  stocks: ['주식 급등 급락', '코스피 나스닥 전망', '코인 비트코인', '테마주 이슈'],
+  economy: ['금리 환율 변동', '부동산 전세 매매', '물가 상승 서민', '고용 취업 실업'],
+  war: ['우크라이나 러시아 전황', '중동 이스라엘 전쟁', '북한 미사일 도발', '미중 갈등 대만'],
+  society: ['사건 사고 충격', '정치 수사 논란', '교육 정책 변화', '범죄 처벌 판결'],
+  science: ['우주 탐사 발견', '신약 의학 연구', '기후변화 환경', '과학 기술 돌파']
+}
+
+function pickRandomNaverKeyword(category: string): string {
+  const pool = NAVER_CATEGORY_KEYWORD_POOL[category]
+  if (!pool || pool.length === 0) return category
+  return pool[Math.floor(Math.random() * pool.length)]
 }
 
 type Article = { title: string; snippet: string; source: string; url: string; date: string; provider?: string }
@@ -46,7 +52,7 @@ export function registerNewsHandlers(): void {
   ipcMain.handle('news:search', async (_event, category: string) => {
     try {
       // 1. Serper + Naver 병렬로 실제 뉴스 기사 수집
-      const naverKeyword = NAVER_CATEGORY_KEYWORDS[category] || category
+      const naverKeyword = pickRandomNaverKeyword(category)
       const [serperArticles, naverArticles] = await Promise.allSettled([
         serperSearch(category),
         searchNaverNewsByKeyword(naverKeyword)

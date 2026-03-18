@@ -32,6 +32,7 @@ export interface VideoExportOptions {
   transitionType?: string        // fade, dissolve, wipeleft 등
   aspectRatio?: '1:1' | '9:16'
   bgmPath?: string
+  removeAudio?: boolean
 }
 
 /**
@@ -66,7 +67,8 @@ export function encodeVideo(
     transitionDuration = 0.5,
     transitionType = 'fade',
     aspectRatio = '1:1',
-    bgmPath
+    bgmPath,
+    removeAudio
   } = options
 
   const n = framePaths.length
@@ -130,7 +132,9 @@ export function encodeVideo(
     }
 
     // BGM 매핑
-    if (bgmPath) {
+    if (removeAudio) {
+      args.push('-an')
+    } else if (bgmPath) {
       args.push('-map', `${n}:a`)
       args.push('-c:a', 'aac', '-b:a', '192k', '-shortest')
     }
@@ -295,10 +299,12 @@ export async function composeVideoWithTextPanels(
     videoDuration: number
     startSec?: number
     bgmPath?: string
+    removeAudio?: boolean
+    watermarkPath?: string
   },
   onProgress?: (percent: number) => void
 ): Promise<void> {
-  const { videoPath, textPanelPaths, outputPath, videoDuration, startSec = 0, bgmPath } = options
+  const { videoPath, textPanelPaths, outputPath, videoDuration, startSec = 0, bgmPath, removeAudio, watermarkPath } = options
   if (textPanelPaths.length === 0) return Promise.reject(new Error('텍스트 패널이 없습니다'))
 
   const VIDEO_H = 648   // 60%
@@ -317,9 +323,21 @@ export async function composeVideoWithTextPanels(
     // 입력 1: 텍스트 패널 PNG (1장)
     args.push('-i', textPanelPaths[0])
 
-    // BGM 입력 (입력 2)
+    // 동적 입력 인덱스 관리
+    let nextInputIdx = 2
+
+    // BGM 입력
+    let bgmInputIdx = -1
     if (bgmPath) {
+      bgmInputIdx = nextInputIdx++
       args.push('-i', bgmPath)
+    }
+
+    // 워터마크 입력
+    let wmInputIdx = -1
+    if (watermarkPath) {
+      wmInputIdx = nextInputIdx++
+      args.push('-i', watermarkPath)
     }
 
     // 필터 체인 구성
@@ -339,15 +357,24 @@ export async function composeVideoWithTextPanels(
       )
     }
 
-    // 텍스트 패널 → 하단 432px
-    filters.push(`[1]scale=1080:${TEXT_H}[txt]`)
-
-    // 세로 스택 → 1080×1080
-    filters.push('[vid][txt]vstack=inputs=2[vout]')
+    // 워터마크 오버레이 (영상 상단 좌측)
+    if (watermarkPath) {
+      filters.push(`[vid][${wmInputIdx}:v]overlay=27:20[vidwm]`)
+      // 텍스트 패널 → 하단
+      filters.push(`[1]scale=1080:${TEXT_H}[txt]`)
+      filters.push('[vidwm][txt]vstack=inputs=2[vout]')
+    } else {
+      // 텍스트 패널 → 하단 432px
+      filters.push(`[1]scale=1080:${TEXT_H}[txt]`)
+      // 세로 스택 → 1080×1080
+      filters.push('[vid][txt]vstack=inputs=2[vout]')
+    }
 
     // 오디오 처리 — filter_complex 안에서 trim하여 비디오와 동기화
-    if (bgmPath) {
-      filters.push(`[2:a]anull[aout]`)
+    if (removeAudio) {
+      // 무음 — 오디오 스트림 제거
+    } else if (bgmPath) {
+      filters.push(`[${bgmInputIdx}:a]anull[aout]`)
     } else if (hasAudio) {
       if (startSec > 0) {
         filters.push(
@@ -361,7 +388,9 @@ export async function composeVideoWithTextPanels(
     args.push('-filter_complex', filters.join(';'))
     args.push('-map', '[vout]')
 
-    if (bgmPath || hasAudio) {
+    if (removeAudio) {
+      args.push('-an')
+    } else if (bgmPath || hasAudio) {
       args.push('-map', '[aout]')
       args.push('-c:a', 'aac', '-b:a', '192k')
       if (bgmPath) {

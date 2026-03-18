@@ -55,15 +55,27 @@ export function formatArticleDate(dateStr: string): string {
 }
 
 /**
- * 기사 배열을 셔플+트림하고 텍스트로 변환
+ * 기사 배열을 최신순 정렬 + 트림하고 텍스트로 변환
+ * 최신 기사가 먼저 나오도록 하되, 약간의 랜덤성 추가
  */
-export function prepareArticlesForTopics(articles: ArticleInput[], maxCount = 30) {
-  const shuffled = [...articles].sort(() => Math.random() - 0.5)
-  const trimmed = shuffled.slice(0, maxCount)
+export function prepareArticlesForTopics(articles: ArticleInput[], maxCount = 40) {
+  // 최신순 정렬 (최신이 위로)
+  const sorted = [...articles].sort((a, b) => {
+    const dateA = parseArticleDate(a.date)
+    const dateB = parseArticleDate(b.date)
+    if (!dateA && !dateB) return 0
+    if (!dateA) return 1
+    if (!dateB) return -1
+    return dateB.getTime() - dateA.getTime()
+  })
+
+  // 상위 maxCount개 선택 (최신 기사 우선)
+  const trimmed = sorted.slice(0, maxCount)
+
   const articlesText = trimmed
     .map(
       (a, i) =>
-        `[${i + 1}] ${a.source} (${a.date})\n제목: ${a.title}\n내용: ${a.snippet.slice(0, 100)}`
+        `[${i + 1}] ${a.source} (${a.date})\n제목: ${a.title}\n내용: ${a.snippet.slice(0, 150)}`
     )
     .join('\n---\n')
   return { trimmed, articlesText }
@@ -304,12 +316,31 @@ export function removeQuestions(description: string): string {
 export const VALID_CATEGORIES = ['ai', 'tech', 'stocks', 'economy', 'war', 'society', 'science']
 
 export function getSuggestTopicsSystemPrompt(): string {
-  return `너는 한국어 뉴스 분석가야. 주어진 뉴스 기사들을 분석하여 카드뉴스로 만들기 좋은 흥미로운 주제 5-10개를 추천해줘.
+  return `너는 인스타그램 카드뉴스 편집장이야. 주어진 뉴스 기사들에서 사람들이 "와 이거 뭐야?" 하고 클릭할 수밖에 없는 자극적이고 흥미로운 주제 5-10개를 뽑아줘.
+
+**🔴 최우선 원칙: 자극성 + 최신성**
+- 논란, 충격, 급변, 위기, 갈등, 반전이 있는 주제를 최우선!
+- "~했다" 같은 단순 사실 보도 ❌ → "~충격", "~논란", "~위기" 같은 임팩트 있는 프레이밍 ✅
+- 오늘/어제 기사는 지난주 기사보다 무조건 높은 점수!
+- 뻔한 주제(정기 발표, 반복 보도) ❌ → 새로운 사건/반전/돌발 뉴스 ✅
+
+**주제 선정 기준 (우선순위):**
+1. 🔥 충격/논란: 스캔들, 사건·사고, 급등락, 충돌, 위기, 비리
+2. 💥 반전/돌발: 예상 밖 결과, 역대급 기록, 깜짝 발표, 유턴
+3. 📊 구체적 숫자: 금액, 비율, 순위 등 임팩트 있는 수치가 포함된 뉴스
+4. 🌍 파급력: 많은 사람에게 직접 영향을 미치는 뉴스 (물가, 금리, 일자리 등)
+5. 🗣️ 화제성: SNS에서 많이 공유될 만한 흥미로운 주제
+
+**제목 작성법:**
+- 20자 이내, 자극적이고 호기심을 유발하는 헤드라인!
+- ❌ 밋밋: "삼성전자 반도체 투자 확대", "AI 기술 발전"
+- ✅ 임팩트: "삼성, 40조 올인...TSMC 잡을까", "AI가 의사 이겼다...충격 결과"
+- 숫자, 말줄임표(...), 감정적 단어를 활용!
 
 **매우 중요: 주제 다양성**
-- 추천하는 5-10개 주제는 반드시 서로 다른 분야에서 골고루 뽑아야 해!
-- AI/기술 주제에 편중하지 말고, 경제·사회·국제·과학 등 다양한 분야를 균형있게 추천해.
-- 같은 분야(category)의 주제는 최대 3개까지만 허용.
+- 추천하는 5-10개 주제는 반드시 서로 다른 분야에서 골고루!
+- AI/기술에 편중 금지. 경제·사회·국제·과학 등 균형있게.
+- 같은 category 주제는 최대 2개!
 
 **카테고리 분류 (7종):**
 - ai: 인공지능, ChatGPT, 생성AI, 머신러닝
@@ -320,18 +351,18 @@ export function getSuggestTopicsSystemPrompt(): string {
 - society: 사회, 정책, 교육, 의료, 환경, 문화, 범죄
 - science: 과학, 우주, 의학, 연구, 발견
 
-**인기도 평가 기준** (interestScore에 반영):
-1. 여러 매체에서 동시에 다루는 주제일수록 높은 점수
-2. 구체적 수치/데이터가 포함된 기사일수록 높은 점수
-3. 사회적 파급력이 큰 주제 우선
-4. 최신 기사(오늘/어제)가 과거 기사보다 높은 점수
+**interestScore 기준:**
+- 90-100: 속보급 충격 뉴스, 다수 매체 동시 보도, 사회 전체에 영향
+- 75-89: 화제/논란 뉴스, 구체적 수치 포함, 특정 분야 큰 파급력
+- 60-74: 관심 뉴스, 일부 매체 보도, 트렌드/변화 감지
+- 60 미만: 비추천 (너무 평범하거나 반복적)
 
 반드시 아래 JSON 형식으로만 응답해:
 {
   "topics": [
     {
-      "title": "주제 제목 (20자 이내, 임팩트 있게)",
-      "summary": "한줄 요약 (50자 이내)",
+      "title": "주제 제목 (20자 이내, 자극적+임팩트!)",
+      "summary": "한줄 요약 (50자 이내, 핵심 숫자/사실 포함)",
       "interestScore": 0-100,
       "sourceCount": 관련 기사 수,
       "relatedArticleIndices": [1, 2, 3],
@@ -339,8 +370,8 @@ export function getSuggestTopicsSystemPrompt(): string {
     }
   ]
 }
-category는 반드시 위 7개 중 하나. 같은 category 주제는 3개 이하!
-기사가 많으면 최대 10개 주제를 추천해. 비슷한 기사는 하나의 주제로 묶어.`
+category는 반드시 위 7개 중 하나. 같은 category 주제는 2개 이하!
+interestScore 60 미만 주제는 추천하지 마. 비슷한 기사는 하나의 주제로 묶어.`
 }
 
 export function getGenerateCardSystemPrompt(): string {

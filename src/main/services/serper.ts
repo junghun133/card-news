@@ -78,14 +78,60 @@ export function filterRecentArticles<T extends { date: string }>(
   return filtered
 }
 
-const CATEGORY_QUERIES: Record<string, string[]> = {
-  ai: ['AI 인공지능 최신 뉴스', 'ChatGPT 생성AI 기술 트렌드', '로봇 자율주행 AI 산업'],
-  tech: ['반도체 IT 기술 뉴스', '스마트폰 통신 테크 트렌드', '자율주행 로봇 기술 혁신'],
-  stocks: ['주식 시장 오늘 뉴스', '코스피 나스닥 투자', '코인 암호화폐 시장 동향'],
-  economy: ['경제 금리 환율 뉴스', '부동산 시장 동향', '고용 물가 GDP 경제지표'],
-  war: ['우크라이나 러시아 전쟁 최신', '중동 이스라엘 전쟁 뉴스', '국제정세 외교 안보 분쟁', '북한 한반도 군사 동향'],
-  society: ['사회 이슈 정책 뉴스', '교육 의료 환경 사회문제', '범죄 사건 사고 뉴스'],
-  science: ['과학 연구 발견 뉴스', '우주 탐사 NASA 뉴스', '의학 신약 건강 연구']
+/**
+ * 카테고리별 검색 쿼리 풀 — 매 검색마다 랜덤으로 4개 선택하여 다양한 결과 제공
+ */
+const CATEGORY_QUERY_POOL: Record<string, string[]> = {
+  ai: [
+    'AI 인공지능 충격 발표', 'ChatGPT 신기능 업데이트 오늘', '생성AI 논란 규제',
+    'AI 대체 일자리 위기', 'OpenAI 구글 AI 경쟁', 'AI 딥페이크 사건 사고',
+    'AI 스타트업 투자 유치', '인공지능 의료 혁신 성과', 'AI 저작권 소송 판결',
+    'AI 반도체 엔비디아 실적', 'AI 로봇 상용화 출시', '생성AI 교육 학교 금지 허용'
+  ],
+  tech: [
+    '반도체 전쟁 삼성 TSMC', 'IT 대기업 구조조정 해고', '스마트폰 신제품 출시 스펙',
+    '자율주행 사고 논란', '사이버 보안 해킹 사건', '메타버스 VR AR 신제품',
+    '배터리 전기차 기술 돌파', '양자컴퓨터 개발 성과', '5G 6G 통신 기술',
+    '테크 기업 실적 발표 주가', '로봇 공장 자동화 도입', '클라우드 빅테크 경쟁'
+  ],
+  stocks: [
+    '주식 폭락 급등 오늘', '코스피 나스닥 실시간 전망', '테마주 급등 이유',
+    '개미 투자자 손실 수익', '공매도 논란 규제', '코인 비트코인 급등락',
+    'IPO 상장 대어 청약', '배당주 고배당 추천', '환율 달러 원화 영향',
+    '증권사 리포트 목표가', '외국인 기관 매수 매도', '부동산 REITs 투자'
+  ],
+  economy: [
+    '금리 인상 인하 결정', '물가 상승 체감 서민', '부동산 폭락 급등 전망',
+    '환율 급변 수출 기업 영향', '고용 실업률 취업난', '가계부채 역대 최대',
+    '유가 국제유가 급변', '무역수지 적자 흑자', '경기침체 불황 경고',
+    '재정적자 국가부채 논란', '소비 트렌드 변화 MZ', '글로벌 경제 위기 신호'
+  ],
+  war: [
+    '우크라이나 러시아 전쟁 전황', '중동 이스라엘 가자 공격', '북한 미사일 도발 도발',
+    '미중 갈등 대만 긴장', '한반도 안보 위기 군사', 'NATO 군비확장 방산',
+    '핵무기 핵위협 확산', '난민 인도주의 위기', '사이버전 해킹 공격',
+    '방산 수출 K방산 계약', '외교 정상회담 합의 결렬', '테러 위협 IS 극단주의'
+  ],
+  society: [
+    '범죄 사건 충격 체포', '정치 스캔들 비리 수사', '교육 입시 정책 논란',
+    '의료 파업 의사 간호사', '환경 기후변화 재난', '인구 감소 저출생 대책',
+    '부동산 전세사기 피해', '노동 최저임금 근무환경', '성범죄 처벌 판결',
+    '식품 안전 리콜 위해', '교통사고 음주운전 처벌', 'SNS 사이버폭력 논란'
+  ],
+  science: [
+    '우주 탐사 화성 달 발견', '신약 개발 임상시험 성공', '기후변화 연구 경고',
+    '공룡 화석 고고학 발견', '양자역학 물리학 돌파구', '유전자 편집 크리스퍼 논란',
+    '전염병 바이러스 변이', '해양 탐사 심해 생물 발견', '핵융합 에너지 실험 성과',
+    '뇌과학 치매 치료 연구', '소행성 충돌 위험 NASA', '줄기세포 재생의학 성과'
+  ]
+}
+
+/**
+ * 쿼리 풀에서 랜덤으로 N개 선택
+ */
+function pickRandomQueries(pool: string[], count: number): string[] {
+  const shuffled = [...pool].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, count)
 }
 
 /**
@@ -98,11 +144,20 @@ export async function searchNews(
   if (!apiKey) throw new Error('SERPER_API_KEY가 설정되지 않았습니다.')
   console.log(`[Serper] Using API key: ${apiKey.slice(0, 4)}...${apiKey.slice(-4)} (len=${apiKey.length})`)
 
-  // 카테고리별 쿼리를 병렬로 검색 (all: 각 카테고리에서 2개씩)
-  const queries =
-    category === 'all'
-      ? ['AI 인공지능 최신', '주식 경제 시장 동향', '우크라이나 러시아 전쟁', '중동 이스라엘 전쟁 분쟁', '국제정세 외교 안보', '과학 기술 혁신', '사회 이슈 정책']
-      : CATEGORY_QUERIES[category] || [category]
+  // 카테고리별 쿼리 풀에서 랜덤 선택 (매번 다른 조합)
+  let queries: string[]
+  if (category === 'all') {
+    // 전체: 각 카테고리에서 1~2개씩 랜덤 선택
+    const allCategories = Object.keys(CATEGORY_QUERY_POOL)
+    queries = allCategories.flatMap((cat) => pickRandomQueries(CATEGORY_QUERY_POOL[cat], 1))
+    // 추가로 트렌딩 쿼리
+    queries.push('오늘 속보 긴급 뉴스', '화제 논란 이슈 실시간')
+  } else {
+    const pool = CATEGORY_QUERY_POOL[category] || [category]
+    queries = pickRandomQueries(pool, 4) // 4개 랜덤 선택 (기존 3개 → 4개)
+  }
+
+  console.log(`[Serper] 카테고리 "${category}" 쿼리: ${queries.join(' | ')}`)
 
   const results = await Promise.all(
     queries.map(async (q) => {
@@ -117,7 +172,8 @@ export async function searchNews(
             q,
             gl: 'kr',
             hl: 'ko',
-            num: 7
+            num: 10,
+            tbs: 'qdr:w' // 최근 1주일 이내 기사만
           })
         })
 
@@ -165,10 +221,23 @@ export async function searchNews(
     console.log(`  ${i + 1}. [${a.date || '날짜없음'}] ${a.title.slice(0, 50)}`)
   })
 
-  // 최근 30일 이내 기사만 필터링
-  const recent = filterRecentArticles(articles, 30)
-  console.log(`[Serper] 최종 결과: ${recent.length}건 (30일 이내)`)
-  return recent
+  // 최근 7일 이내 기사만 필터링 (더 신선한 뉴스)
+  const recent = filterRecentArticles(articles, 7)
+  // 7일 필터로 너무 적으면 14일로 확장
+  const finalArticles = recent.length >= 5 ? recent : filterRecentArticles(articles, 14)
+
+  // 최신순 정렬 (가장 최근 기사가 위로)
+  finalArticles.sort((a, b) => {
+    const dateA = parseArticleDate(a.date)
+    const dateB = parseArticleDate(b.date)
+    if (!dateA && !dateB) return 0
+    if (!dateA) return 1
+    if (!dateB) return -1
+    return dateB.getTime() - dateA.getTime()
+  })
+
+  console.log(`[Serper] 최종 결과: ${finalArticles.length}건 (최신순)`)
+  return finalArticles
 }
 
 /**
@@ -182,8 +251,8 @@ export async function searchNewsByKeyword(
 
   console.log(`[Serper] 키워드 검색: "${keyword}"`)
 
-  // 키워드 원본 + 상세 분석 변형으로 2회 검색
-  const queries = [keyword, `${keyword} 최신 뉴스`]
+  // 키워드 원본 + 다양한 변형으로 3회 검색
+  const queries = [keyword, `${keyword} 최신 뉴스`, `${keyword} 논란 이슈`]
 
   const results = await Promise.all(
     queries.map(async (q) => {
@@ -241,10 +310,22 @@ export async function searchNewsByKeyword(
     console.log(`  ${i + 1}. [${a.date || '날짜없음'}] ${a.title.slice(0, 50)}`)
   })
 
-  // 최근 30일 이내 기사만 필터링
-  const recent = filterRecentArticles(articles, 30)
-  console.log(`[Serper] 키워드 검색 최종: ${recent.length}건 (30일 이내)`)
-  return recent
+  // 최근 7일 → 14일 점진적 필터링
+  const recent = filterRecentArticles(articles, 7)
+  const finalArticles = recent.length >= 5 ? recent : filterRecentArticles(articles, 14)
+
+  // 최신순 정렬
+  finalArticles.sort((a, b) => {
+    const dateA = parseArticleDate(a.date)
+    const dateB = parseArticleDate(b.date)
+    if (!dateA && !dateB) return 0
+    if (!dateA) return 1
+    if (!dateB) return -1
+    return dateB.getTime() - dateA.getTime()
+  })
+
+  console.log(`[Serper] 키워드 검색 최종: ${finalArticles.length}건 (최신순)`)
+  return finalArticles
 }
 
 /**
@@ -319,9 +400,9 @@ export async function searchNewsByTopic(
     console.log(`  ${i + 1}. [${a.date || '날짜없음'}] ${a.title.slice(0, 50)}`)
   })
 
-  // 최근 30일 이내 기사만 필터링
-  const recent = filterRecentArticles(articles, 30)
-  console.log(`[Serper] 주제 추가검색 최종: ${recent.length}건 (30일 이내)`)
+  // 주제 추가검색은 14일 필터 (이미 선택된 주제이므로 약간 넓게)
+  const recent = filterRecentArticles(articles, 14)
+  console.log(`[Serper] 주제 추가검색 최종: ${recent.length}건 (14일 이내)`)
   return recent
 }
 

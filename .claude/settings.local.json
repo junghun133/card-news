@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(npx tsc:*)",
+      "Bash(find /c/develop/Project/card-news -maxdepth 3 -name tailwind.config.* -o -name postcss.config.*)",
+      "Bash(find /c/develop/Project/card-news -path */node_modules -prune -o -name *.css -type f -print)",
+      "Bash(grep -r \"font-weight\\\\|font-size\\\\|font-family\" /c/develop/Project/card-news/src --include=*.tsx --include=*.ts --include=*.css)"
+    ]
+  }
+}
