@@ -1621,40 +1621,67 @@ export default function VideoCreatorPanel() {
                         {subtitleSettings.translatedEntries
                           .filter(e => e.startSec < videoTrim.endSec && e.endSec > videoTrim.startSec)
                           .map((entry, i) => {
-                            const fmt = (sec: number) => {
+                            const updateEntry = (patch: Partial<typeof entry>) => {
+                              setSubtitleSettings((p) => ({
+                                ...p,
+                                translatedEntries: p.translatedEntries.map(
+                                  (en) => en.index === entry.index ? { ...en, ...patch } : en
+                                )
+                              }))
+                            }
+                            // 초 → MM:SS.s 표시, 입력은 초 단위
+                            const fmtDisplay = (sec: number) => {
                               const m = Math.floor(sec / 60)
-                              const s = Math.floor(sec % 60)
-                              return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                              const s = (sec % 60).toFixed(1)
+                              return `${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`
                             }
                             return (
-                              <div key={entry.index} className={`flex items-start gap-2 px-3 py-2 ${i > 0 ? 'border-t border-cream-dark/50 dark:border-gray-700' : ''}`}>
-                                <span className="mt-1 shrink-0 text-[10px] text-text-light dark:text-gray-500 w-20">
-                                  {fmt(entry.startSec)}~{fmt(entry.endSec)}
-                                </span>
+                              <div key={entry.index} className={`px-3 py-2 ${i > 0 ? 'border-t border-cream-dark/50 dark:border-gray-700' : ''}`}>
+                                <div className="mb-1 flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min={0}
+                                    value={entry.startSec}
+                                    onChange={(e) => {
+                                      const v = Math.max(0, parseFloat(e.target.value) || 0)
+                                      updateEntry({ startSec: v })
+                                    }}
+                                    className="w-16 rounded border border-cream-dark bg-transparent px-1 py-0.5 text-[11px] text-center text-text-light focus:border-blue-accent focus:bg-white focus:outline-none dark:border-gray-600 dark:text-gray-400 dark:focus:bg-gray-700"
+                                  />
+                                  <span className="text-[10px] text-text-light">~</span>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    min={entry.startSec + 0.1}
+                                    value={entry.endSec}
+                                    onChange={(e) => {
+                                      const v = Math.max(entry.startSec + 0.1, parseFloat(e.target.value) || 0)
+                                      updateEntry({ endSec: v })
+                                    }}
+                                    className="w-16 rounded border border-cream-dark bg-transparent px-1 py-0.5 text-[11px] text-center text-text-light focus:border-blue-accent focus:bg-white focus:outline-none dark:border-gray-600 dark:text-gray-400 dark:focus:bg-gray-700"
+                                  />
+                                  <span className="text-[10px] text-text-light dark:text-gray-500 ml-1">
+                                    ({fmtDisplay(entry.startSec)}~{fmtDisplay(entry.endSec)})
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      setSubtitleSettings((p) => ({
+                                        ...p,
+                                        translatedEntries: p.translatedEntries.filter(en => en.index !== entry.index)
+                                      }))
+                                    }}
+                                    className="ml-auto shrink-0 text-xs text-red-400 hover:text-red-500 cursor-pointer"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                                 <input
                                   type="text"
                                   value={entry.text}
-                                  onChange={(e) => {
-                                    setSubtitleSettings((p) => ({
-                                      ...p,
-                                      translatedEntries: p.translatedEntries.map(
-                                        (en) => en.index === entry.index ? { ...en, text: e.target.value } : en
-                                      )
-                                    }))
-                                  }}
-                                  className="flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-text-dark focus:border-blue-accent focus:bg-white focus:outline-none dark:text-white dark:focus:bg-gray-700"
+                                  onChange={(e) => updateEntry({ text: e.target.value })}
+                                  className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-text-dark focus:border-blue-accent focus:bg-white focus:outline-none dark:text-white dark:focus:bg-gray-700"
                                 />
-                                <button
-                                  onClick={() => {
-                                    setSubtitleSettings((p) => ({
-                                      ...p,
-                                      translatedEntries: p.translatedEntries.filter(en => en.index !== entry.index)
-                                    }))
-                                  }}
-                                  className="mt-1 shrink-0 text-xs text-red-400 hover:text-red-500 cursor-pointer"
-                                >
-                                  ✕
-                                </button>
                               </div>
                             )
                           })}
