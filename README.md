@@ -1,5 +1,15 @@
 # card-news
 
+<p>
+  <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"/>
+  <img src="https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=white" alt="React"/>
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"/>
+  <img src="https://img.shields.io/badge/OpenAI-412991?style=flat-square" alt="OpenAI"/>
+  <img src="https://img.shields.io/badge/Gemini-8E75B2?style=flat-square&logo=googlegemini&logoColor=white" alt="Gemini"/>
+  <img src="https://img.shields.io/badge/Supabase-3FCF8E?style=flat-square&logo=supabase&logoColor=white" alt="Supabase"/>
+  <img src="https://img.shields.io/badge/ffmpeg-007808?style=flat-square&logo=ffmpeg&logoColor=white" alt="ffmpeg"/>
+</p>
+
 **card-news**(카드뉴스 제조기)는 AI·기술·주식·경제·국제·사회·과학 뉴스를 수집하고, LLM이 주제를 추천하고 기사를 교차 검증해 **카드뉴스 슬라이드를 자동으로 만들어 주는 Electron 데스크톱 앱**입니다. 만들어진 카드는 앱 안에서 직접 편집하고 PNG/JPEG/GIF 이미지나 MP4 영상으로 내보낼 수 있습니다.
 
 <!-- TODO: 스크린샷 -->
